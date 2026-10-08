@@ -1,0 +1,79 @@
+# Copy this file, choose a model available in your account, and set its key.
+# Paths are relative to this TOML file. Secrets belong in environment variables.
+
+[run]
+proofread = false
+translate = true
+allow_partial = false
+# output_dir = "../.runs"
+
+[asr]
+executable = "whisperx" # May be an absolute executable in a separate environment.
+model = "small"
+device = "cpu"
+compute_type = "int8"
+# language = "sl" # Normally mapped from --language slv; set for other packs.
+relisten = false # Second ASR pass on cues marked uncertain during proofreading.
+max_cue_ms = 8000
+line_length = 42
+pause_ms = 800
+max_chars_per_second = 25 # Report fast cues without changing source text/timing.
+
+[blitzer]
+executable = "bltzr"
+# config = "blitzer.toml" # Omit to use Blitzer's usual user config.
+# plugins_dir = "language-packs"
+# known_file = "slv-known.txt"
+no_config = false
+
+[llm]
+default = "router"
+# proofread = "router"
+# translate = "direct-deepseek"
+# review = "router"
+batch_size = 20
+max_chars = 24000
+repair_attempts = 2
+
+[profiles.router]
+provider = "openrouter"
+model = "deepseek/deepseek-chat" # Example ID; select an available model in your account.
+api_key_env = "OPENROUTER_API_KEY"
+response_format = "json_object" # json_schema for supported models; text omits enforcement.
+max_tokens = 4096
+timeout = 120
+retries = 2
+# referer = "https://your-app.example" # Optional OpenRouter app attribution.
+
+# Other choices; uncomment a profile and select it above.
+# [profiles.direct-deepseek]
+# provider = "deepseek"
+# model = "YOUR_DEEPSEEK_MODEL_ID"
+# api_key_env = "DEEPSEEK_API_KEY"
+# response_format = "json_object"
+
+# [profiles.local]
+# provider = "compatible"
+# base_url = "http://127.0.0.1:1234/v1"
+# model = "YOUR_LOCAL_MODEL_ID"
+# api_key_env = "LOCAL_LLM_KEY" # Set a nonempty placeholder if your server ignores keys.
+# response_format = "text" # Blitzline still parses and validates JSON locally.
+
+[media]
+kind = "audio" # video creates H.264/AAC MP4; input must have a video stream.
+padding_ms = 200
+max_clip_ms = 45000
+ffmpeg = "ffmpeg"
+ffprobe = "ffprobe"
+audio_codec = "libmp3lame"
+video_codec = "libx264"
+
+[export]
+format = "tsv" # tsv, apkg (install the apkg extra), anki (AnkiConnect required).
+deck = "Blitzline"
+model = "Blitzline v1"
+anki_url = "http://127.0.0.1:8765"
+existing = "skip" # update replaces Blitzline fields without changing scheduling.
+# front_template = "{{Word}}<br>{{Sentence1}}<br>{{Media1}}"
+# back_template = "{{FrontSide}}<hr id=answer>{{English}}<br>{{Sentence2}}<br>{{Media2}}<br>{{Notes}}"
+# css = ".card { font-family: sans-serif; font-size: 22px; }"

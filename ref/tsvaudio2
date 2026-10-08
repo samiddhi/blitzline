@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+"""
+CLI tool for extracting sentence audio from a video and producing an
+Anki-ready TSV with [sound:...] references.
+
+Usage:
+    python extract_audio.py video.mp4 subtitle.srt input.tsv output.tsv
+"""
+
+import sys, re, subprocess
+from pathlib import Path
+
+# ----------------------------------------------------------------------
+# Constants
+# ----------------------------------------------------------------------
+PADDING = 0.2
+MAX_SEGMENTS = 15
+
+
+# ----------------------------------------------------------------------
+# SRT parsing
+# ----------------------------------------------------------------------
+def parse_srt(srt_path: Path):
+    """Return list of (index, start, end, cleaned_text)."""
+    with srt_path.open(encoding="utf-8") as f:
+        raw = f.read()
+
+    blocks = re.split(r"\n\s*\n", raw.strip())
+    segments = []
+
+    for block in blocks:
+        lines = block.strip().splitlines()
+        if len(lines) < 2:
+            continue
+
+        try:
+            idx = int(lines[0])
+        except ValueError:
+            continue
+
+        m = re.match(
+            r"(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)",
+            lines[1]
+        )
+
+        if not m:
+            continue
+
+        start = m.group(1).replace(",", ".")
+        end = m.group(2).replace(",", ".")
+
+        text = " ".join(lines[2:])
+        text = re.sub(r"^-\s*\w+\s*:\s*", "", text)
+        text = re.sub(r"^\w+\s*:\s*", "", text)
+
+        cleaned = clean_for_match(text)
+
+        if cleaned:
+            segments.append((idx, start, end, cleaned))
+
+    return segments
+
+
+# ----------------------------------------------------------------------
+# Text cleaning
+# ----------------------------------------------------------------------
+def clean_for_match(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"[^\w\s]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+# ----------------------------------------------------------------------
+# Find matching segments
+# ----------------------------------------------------------------------
+def find_segments(sentence: str, srt_segments: list) -> list | None:
+    target_words = clean_for_match(sentence).split()
+
+    if not target_words:
+        return None
+
+    n = len(srt_segments)
+    seg_words = [seg[3].split() for seg in srt_segments]
+
+    for i in range(n):
+        combined_words = []
+        word_seg_map = []
+
+        for k in range(i, min(i + MAX_SEGMENTS, n)):
+            combined_words.extend(seg_words[k])
+            word_seg_map.extend(
+                [srt_segments[k][0]] * len(seg_words[k])
+            )
+
+        target_len = len(target_words)
+
+        for start_pos in range(
+            len(combined_words) - target_len + 1
+        ):
+            if combined_words[
+                start_pos:start_pos + target_len
+            ] == target_words:
+
+                first_seg = word_seg_map[start_pos]
+                last_seg = word_seg_map[
+                    start_pos + target_len - 1
+                ]
+
+                return [
+                    seg[0]
+                    for seg in srt_segments
+                    if first_seg <= seg[0] <= last_seg
+                ]
+
+    return None
+
+
+# ----------------------------------------------------------------------
+# Time conversion
+# ----------------------------------------------------------------------
+def time_to_seconds(ts: str) -> float:
+    parts = ts.replace(",", ".").split(":")
+    return (
+        float(parts[0]) * 3600
+        + float(parts[1]) * 60
+        + float(parts[2])
+    )
+
+
+# ----------------------------------------------------------------------
+# Audio extraction
+# ----------------------------------------------------------------------
+def extract_audio(video_path, seg_indices, srt_segments,
+                  audio_dir, cache):
+
+    key = tuple(seg_indices)
+
+    if key in cache:
+        return cache[key]
+
+    first = next(
+        s for s in srt_segments
+        if s[0] == seg_indices[0]
+    )
+
+    last = next(
+        s for s in srt_segments
+        if s[0] == seg_indices[-1]
+    )
+
+    start_sec = max(
+        0,
+        time_to_seconds(first[1]) - PADDING
+    )
+
+    end_sec = (
+        time_to_seconds(last[2])
+        + PADDING
+    )
+
+    stem = video_path.stem.replace(" ", "_")
+
+    if len(seg_indices) == 1:
+        fname = (
+            f"{stem}_seg_{seg_indices[0]:04d}.mp3"
+        )
+    else:
+        fname = (
+            f"{stem}_seg_{seg_indices[0]:04d}-"
+            f"{seg_indices[-1]:04d}.mp3"
+        )
+
+    out_path = audio_dir / fname
+
+    if out_path.exists():
+        cache[key] = fname
+        return fname
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-ss",
+        str(start_sec),
+        "-to",
+        str(end_sec),
+        "-vn",
+        "-acodec",
+        "libmp3lame",
+        "-q:a",
+        "2",
+        str(out_path),
+    ]
+
+    subprocess.run(cmd, check=True)
+
+    cache[key] = fname
+    return fname
+
+# ----------------------------------------------------------------------
+# Resolve segments (automatic + interactive fallback)
+# ----------------------------------------------------------------------
+def resolve_segments(word: str, sent_text: str, sent_key: str,
+                     srt_segments: list) -> list | None:
+    """
+    Try automatic matching, then prompt the user if needed.
+    Returns list of segment indices, or None if skipped.
+    """
+
+    segs = find_segments(sent_text, srt_segments)
+
+    if segs is not None:
+        return segs
+
+    if not sys.stdin.isatty():
+        print(
+            f"WARNING: Could not match sentence for "
+            f"'{word}' {sent_key}: {sent_text}"
+        )
+        return None
+
+    print("\n---")
+    print("Automatic alignment failed.")
+    print(f"Word: {word}")
+    print(f"Sentence ({sent_key}):")
+    print(sent_text)
+    print()
+    print("Please enter the correct segment numbers.")
+    print("  - Single segment:   42")
+    print("  - Range:            42 45")
+    print("  - Press Enter to skip this sentence")
+
+    while True:
+        inp = input("Segments: ").strip()
+
+        if not inp:
+            print("  Skipped – audio will be empty.")
+            return None
+
+        parts = inp.split()
+
+        try:
+            if len(parts) == 1:
+                start = int(parts[0])
+                end = start
+            elif len(parts) == 2:
+                start = int(parts[0])
+                end = int(parts[1])
+            else:
+                raise ValueError
+
+            indices = list(range(start, end + 1))
+
+            existing = {
+                seg[0]
+                for seg in srt_segments
+            }
+
+            missing = [
+                i for i in indices
+                if i not in existing
+            ]
+
+            if missing:
+                print(
+                    f"  Warning: segment(s) {missing} "
+                    "not found. Try again."
+                )
+                continue
+
+            return indices
+
+        except ValueError:
+            print(
+                "  Invalid format. Enter one or two "
+                "integer numbers separated by a space."
+            )
+
+
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
+def main():
+
+    if len(sys.argv) != 5:
+        print(
+            "Usage: python extract_audio.py "
+            "<video> <srt> <input.tsv> <output.tsv>"
+        )
+        sys.exit(1)
+
+    video_path = Path(sys.argv[1])
+    srt_path = Path(sys.argv[2])
+    tsv_in = Path(sys.argv[3])
+    tsv_out = Path(sys.argv[4])
+
+    if not video_path.exists():
+        sys.exit(f"Video not found: {video_path}")
+
+    if not srt_path.exists():
+        sys.exit(f"SRT not found: {srt_path}")
+
+    if not tsv_in.exists():
+        sys.exit(f"Input TSV not found: {tsv_in}")
+
+    audio_dir = Path(video_path.stem + "_audio")
+    audio_dir.mkdir(exist_ok=True)
+
+    segments = parse_srt(srt_path)
+
+    print(
+        f"Parsed {len(segments)} non-empty SRT segments."
+    )
+
+    with tsv_in.open(encoding="utf-8") as f:
+        lines = [
+            line.rstrip("\n")
+            for line in f
+            if line.strip()
+            and not line.startswith("#")
+        ]
+
+    # ==============================================================
+    # PASS 1: Resolve ALL alignments before running ffmpeg
+    # ==============================================================
+
+    rows = []
+
+    for line in lines:
+
+        parts = line.split("\t")
+
+        if len(parts) < 6:
+            print(
+                f"Warning: skipping malformed line: "
+                f"{line[:60]}..."
+            )
+            rows.append(None)
+            continue
+
+        word, trans, sent1, sent2, notes, freq = [
+            p.strip()
+            for p in parts[:6]
+        ]
+
+        segs1 = (
+            resolve_segments(
+                word,
+                sent1,
+                "s1",
+                segments
+            )
+            if sent1 else None
+        )
+
+        segs2 = (
+            resolve_segments(
+                word,
+                sent2,
+                "s2",
+                segments
+            )
+            if sent2 else None
+        )
+
+        rows.append({
+            "word": word,
+            "trans": trans,
+            "sent1": sent1,
+            "sent2": sent2,
+            "notes": notes,
+            "freq": freq,
+            "segs1": segs1,
+            "segs2": segs2,
+        })
+
+    # ==============================================================
+    # PASS 2: Only now run ffmpeg
+    # ==============================================================
+
+    audio_cache = {}
+
+    with tsv_out.open(
+        "w",
+        encoding="utf-8"
+    ) as out:
+
+        for row in rows:
+
+            if row is None:
+                continue
+
+            audio1 = ""
+            audio2 = ""
+
+            if row["segs1"]:
+
+                fname = extract_audio(
+                    video_path,
+                    row["segs1"],
+                    segments,
+                    audio_dir,
+                    audio_cache,
+                )
+
+                audio1 = f"[sound:{fname}]"
+
+
+            if row["segs2"]:
+
+                fname = extract_audio(
+                    video_path,
+                    row["segs2"],
+                    segments,
+                    audio_dir,
+                    audio_cache,
+                )
+
+                audio2 = f"[sound:{fname}]"
+
+
+            out.write(
+                f"{row['word']}\t"
+                f"{row['trans']}\t"
+                f"{row['sent1']}\t"
+                f"{row['sent2']}\t"
+                f"{row['notes']}\t"
+                f"{row['freq']}\t"
+                f"{audio1}\t"
+                f"{audio2}\n"
+            )
+
+    print(
+        f"Output written to {tsv_out}"
+    )
+
+    print(
+        f"Audio files saved in '{audio_dir}/' "
+        "– move them to your Anki collection.media folder."
+    )
+
+
+if __name__ == "__main__":
+    main()

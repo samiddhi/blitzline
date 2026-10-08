@@ -23,6 +23,12 @@ Install FFmpeg, Blitzer with your language pack, and WhisperX separately.
 Choose your model and set its API key before using the example config.
 WhisperX can run in another environment via `asr.executable`.
 
+[Blitzer](https://github.com/samiddhi/blitzer-py/) can be installed from pip with:
+
+```sh
+pip install bltzr
+```
+
 Already have subtitles? Skip transcription:
 
 ```sh

@@ -1,0 +1,33 @@
+{
+  "fields": [
+    "Word",
+    "Translation",
+    "Sentence1",
+    "Sentence2",
+    "Comments",
+    "Frequency",
+    "Sentence1 Audio",
+    "Sentence2 Audio",
+    "Word Audio",
+    "Image",
+    "FillForTwoWay"
+  ],
+  "templates": [
+    {
+      "name": "Recall",
+      "front": "{{#FillForTwoWay}}\n\n{{Translation}}\n<br>\n\n{{type:Word}}\n\n{{/FillForTwoWay}}",
+      "back": "{{FrontSide}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> \n<hr style=\"margin: 1% 25% 1% 25%\">\n\n{{#Sentence1}}\n  {{Sentence1}} <br> {{Sentence1 Audio}}\n{{/Sentence1}}\n<br>\n\n{{#Sentence2}}\n  {{Sentence2}} <br> {{Sentence2 Audio}}\n{{/Sentence2}}\n\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}\n\n"
+    },
+    {
+      "name": "Sentence1",
+      "front": "{{#Sentence1}}\n\n<div id=\"sentence\">{{Sentence1}}</div>\n<br>{{Sentence1 Audio}}\n\n{{/Sentence1}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>",
+      "back": "{{FrontSide}}\n<br>\n{{Sentence1}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}"
+    },
+    {
+      "name": "Sentence2",
+      "front": "{{#Sentence2}}\n\n<div id=\"sentence\">{{Sentence2}}</div>\n<br>{{Sentence2 Audio}}\n\n{{/Sentence2}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>\n",
+      "back": "{{FrontSide}}\n<br>\n{{Sentence2}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}"
+    }
+  ],
+  "css": ".card {\n    font-family: Avenir Next;\n    font-size: 35px;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n\nb {\n\tcolor: black;\n\topacity: 35%;\n\tfont-weight: bold;\n}\n\n@media screen and (max-device-width: 600px) {\n    b {\n        color: lightblue;\n        opacity: 100%;\n        font-style: italic;\n    }\n}"
+}

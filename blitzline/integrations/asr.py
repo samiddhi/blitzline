@@ -1,8 +1,8 @@
-"""Launch WhisperX without importing its heavyweight runtime.
+"""Prepare audio and dispatch local or remote transcription without heavy imports.
 
 Scope statement: own transcription command execution and raw JSON discovery.
-Included: pack-to-ASR language mapping, configured model/device execution,
-and targeted second transcription for questionable cues.
+Included: pack-to-ASR language mapping, WAV preparation, local WhisperX execution,
+Modal/HTTP dispatch, and targeted second transcription for questionable cues.
 Excluded: ASR normalization and cue splitting (transcript.py), LLM text review
 (llm.py), final media clips (media.py), and command-line presentation (cli.py).
 Start here: transcribe returns raw segment JSON; relisten retranscribes one cue.
@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from blitzline.integrations.remote_asr import transcribe_remote
 from blitzline.media import run_process
 from blitzline.records import PipelineError
 from blitzline.storage import read_json
@@ -63,8 +64,9 @@ def transcribe(
     *,
     media_settings=None,
     info=None,
+    cache_dir=None,
 ) -> dict:
-    """Run configured WhisperX for raw JSON in a temporary working directory."""
+    """Prepare selected audio and return local or remote ASR JSON from the chosen backend."""
     with tempfile.TemporaryDirectory(prefix="blitzline-asr-") as directory:
         selected_source = source
         if media_settings is not None:
@@ -87,6 +89,13 @@ def transcribe(
                 str(selected_source),
             ]
             run_process(command, settings["timeout"], runner)
+        if settings["backend"] != "local":
+            data = transcribe_remote(
+                selected_source, asr_language(language, settings), settings, cache_dir
+            )
+            if media_settings is not None:
+                data["blitzline_audio_offset_ms"] = info.get("audio_offset_ms", 0)
+            return data
         args = [
             settings["executable"],
             str(selected_source),
@@ -120,6 +129,8 @@ def relisten(
     settings: dict,
     media_settings: dict,
     runner=subprocess.run,
+    *,
+    cache_dir=None,
 ) -> str:
     """Run a second ASR pass on one exact interval; return text without new timing."""
     with tempfile.TemporaryDirectory(prefix="blitzline-relisten-") as directory:
@@ -146,7 +157,7 @@ def relisten(
             str(audio),
         ]
         run_process(args, media_settings["timeout"], runner)
-        data = transcribe(audio, language, settings, runner)
+        data = transcribe(audio, language, settings, runner, cache_dir=cache_dir)
         value = " ".join(
             segment["text"].strip() for segment in data.get("segments", [])
         ).strip()

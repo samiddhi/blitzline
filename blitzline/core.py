@@ -16,8 +16,14 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from blitzline import __version__
-from blitzline.config import llm_profile, validate_config
+from blitzline.config import (
+    llm_profile,
+    resolve_export,
+    upgrade_settings,
+    validate_config,
+)
 from blitzline.exports.anki import deliver
+from blitzline.exports.model import export_dependencies
 from blitzline.exports.package import export_package
 from blitzline.exports.tsv import export_tsv
 from blitzline.integrations import asr, blitzer
@@ -87,6 +93,7 @@ def run_pipeline(
         raise ValueError(
             "Use a three-letter lowercase Blitzer language code; base cannot lemmatize"
         )
+    resolve_export(settings, language)
     if srt and asr_json:
         raise ValueError("Choose either an SRT or ASR JSON input")
     if stop_after and stop_after not in STAGES:
@@ -199,7 +206,7 @@ def execute_pipeline(
             settings["asr"],
             (
                 tool_identity(settings["asr"]["executable"])
-                if not transcript_input
+                if not transcript_input and settings["asr"]["backend"] == "local"
                 else None
             ),
             (
@@ -343,6 +350,7 @@ def prepare_transcript(store, source, language, request, info, settings):
                 settings["asr"],
                 media_settings=settings["media"],
                 info=info,
+                cache_dir=store.directory / ".cache" / "asr",
             )
         )
         raw_path = store.artifact("raw-asr.json")
@@ -373,7 +381,12 @@ def prepare_proofread(store, source, language, cues, settings, requester):
         selected = [cue for cue in cues if cue.id in uncertain]
         evidence = {
             cue.id: asr.relisten(
-                source, cue, language, settings["asr"], settings["media"]
+                source,
+                cue,
+                language,
+                settings["asr"],
+                settings["media"],
+                cache_dir=store.directory / ".cache" / "asr",
             )
             for cue in selected
         }
@@ -528,19 +541,25 @@ def prepare_media(store, cards, source, info, settings):
 
 def export_stage(store, cards, settings, transport=None):
     """Export checksum-valid cards; always recheck live Anki for direct delivery."""
-    kind = settings["export"]["format"]
+    options = resolve_export(
+        settings, store.manifest.get("request", {}).get("language")
+    )
+    kind = options["format"]
     destination = store.directory / "exports" / kind
     adapters = {"tsv": export_tsv, "apkg": export_package, "anki": deliver}
-    options = {"transport": transport} if kind == "anki" and transport else {}
+    transport_options = {"transport": transport} if kind == "anki" and transport else {}
 
     def action():
         """Run the selected delivery adapter and return its tracked output paths."""
         paths = adapters[kind](
-            cards, store.directory / "media", destination, settings["export"], **options
+            cards, store.directory / "media", destination, options, **transport_options
         )
         return {
             "format": kind,
             "cards": len(cards),
+            "deck": options["deck"],
+            "deck_profile": options["deck_profile"],
+            "model": options["model"],
             "paths": [str(p) for p in paths],
         }, paths
 
@@ -548,7 +567,11 @@ def export_stage(store, cards, settings, transport=None):
         result, paths = action()
         write_json(store.artifact("07-export-anki.json"), result)
         return result
-    return store.stage("07-export-" + kind, [encode(cards), settings["export"]], action)
+    return store.stage(
+        "07-export-" + kind,
+        [encode(cards), options, export_dependencies(options)],
+        action,
+    )
 
 
 def resume_pipeline(
@@ -566,7 +589,7 @@ def resume_pipeline(
     """Resume the saved media request with optional settings/transcript/review changes."""
     directory = Path(directory).expanduser().resolve()
     manifest = read_json(directory / "manifest.json")
-    selected = settings or manifest["settings"]
+    selected = settings or upgrade_settings(manifest["settings"])
     # Revalidate merged CLI settings rather than silently accepting saved typos.
     selected = deepcopy(selected)
     for section, values in (overrides or {}).items():
@@ -593,7 +616,7 @@ def export_run(directory, *, settings=None, overrides=None, transport=None) -> d
     directory = Path(directory).expanduser().resolve()
     with run_lock(directory):
         manifest = read_json(directory / "manifest.json")
-        selected = settings or manifest["settings"]
+        selected = settings or upgrade_settings(manifest["settings"])
         selected = deepcopy(selected)
         for section, values in (overrides or {}).items():
             selected[section].update({k: v for k, v in values.items() if v is not None})

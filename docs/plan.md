@@ -178,6 +178,12 @@ reviewed structured data can then complete card generation.
   malformed cues with line/cue diagnostics. Test millisecond rounding and
   hour boundaries without accumulating timing drift.
 
+- [x] Support deployed Modal GPU functions and provider-neutral HTTP workers.
+  Normalize audio locally, cache validated chunks, restore source-relative timing,
+  and recover saved Modal call IDs after client interruption. Supply a deployable
+  worker, documented contracts, and explicit local/remote selection. Remote
+  transport tests remain offline; live GPU recognition requires separate acceptance.
+
 ## 5. Optional proofreading and English subtitles
 
 - [x] Send proofreading bounded batches of cue IDs and text, with adjacent
@@ -218,9 +224,15 @@ reviewed structured data can then complete card generation.
 
 - [x] Add `--config PATH` only when a dedicated Blitzer configuration is
   selected; otherwise inherit its normal configuration lookup. Preserve
-  filtering, exclusions, known-file, sort, sentence-pattern, and context-limit
-  settings unless explicitly overridden. Explain the mandatory overrides.
-  In particular, lemma display does not force lemma-based known filtering.
+  exact-word (word form) and word-family (lexeme/lemma) lists, sort,
+  sentence-pattern, and context-limit settings unless explicitly overridden.
+  Support `skip_exact_words_file` and `skip_word_families_file` independently;
+  keep legacy `known_file` for existing configurations. Explain the mandatory
+  display overrides and why they never change either list's meaning.
+- [x] Discover Blitzer's current `bltzr.toml` filename and fingerprint both
+  effective skip files, including missing files. Refresh vocabulary on resume
+  and reject stale exports after a list changes. Document the two lists with
+  the English verb "to be" and singular/plural noun examples.
 - [x] Require the four README flags. Also force JSON and disable report
   preambles, known-list writes, and context-history writes so automation is
   noninteractive and repeatable even when user defaults enable those features.
@@ -303,10 +315,13 @@ reviewed structured data can then complete card generation.
 
 ## 9. Anki exports and delivery
 
-- [x] Define one stable note model: Word, English, Sentence1, Sentence2, Notes,
-  Frequency, Media1, Media2, and Source. Keep the README's six fields first;
-  add stable note identity as explicit export metadata/field where required.
-  Use one vocabulary card per note initially, with templates shared by modes.
+- [x] Share resolved note definitions across TSV, APKG, and AnkiConnect.
+  Default to the eleven-field Blitzer Basic format from `ref/example_note.apkg`,
+  with conditional Sentence1/Sentence2 cards and optional typed Recall.
+  Keep the original ten-field Vocabulary format as a legacy preset. Support
+  customizable fields/mappings, multiple templates, CSS/JavaScript, tags, assets,
+  and explicit per-deck source languages/card selections. Preserve stable
+  identity and source/language metadata without displaying them by default.
 - [x] TSV: use a real tab-delimited writer, documented quoting/newline rules,
   explicit empty cells, UTF-8, escaped HTML, and verified media references.
   Include media and short import instructions for field mapping, HTML handling,

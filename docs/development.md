@@ -91,11 +91,36 @@ cue span map. Whitespace normalization is explicit; punctuation and words remain
 unchanged. Corrected cues lose old word alignment and use cue timing.
 
 Blitzer is always invoked with `--freq --lemmatize --context --bold html`, JSON,
-and no prompt/source preamble, known updates, or history saving. Other defaults
-remain Blitzer's policy. `base` cannot support mandatory lemmatization: use a
+and no prompt/source preamble, list updates, or history saving. Cards show basic
+words (lexeme/lemma); skipping remains independent of display. Exact-word lists
+(word form) remove only listed spellings, while word-family lists remove the
+listed dictionary families. Other defaults remain Blitzer's policy.
+`base` cannot support mandatory lemmatization: use a
 real three-letter language pack. Blitzer output includes plain contexts and
 highlight offsets, even with HTML bold selected. Blitzline escapes source text
 and inserts markup itself.
+
+`blitzer.skip_exact_words_file` and `blitzer.skip_word_families_file` forward
+the corresponding Blitzer CLI options. Each overrides only its own file.
+Omitted overrides inherit Blitzer's per-language settings. See
+[word lists](word-lists.md) for the English examples and migration instructions.
+Legacy `blitzer.known_file` is still accepted for existing configurations and
+saved runs, but cannot be combined with the two new overrides.
+
+Dependency fingerprints follow the same config selection as Blitzer:
+explicit `blitzer.config`, `BLITZER_CONFIG`, then an existing
+`$XDG_CONFIG_HOME/bltzr/bltzr.toml`, `~/.config/bltzr/bltzr.toml`, or native
+platform `bltzr.toml` as appropriate. `blitzer.no_config` disables config lookup.
+Relative list paths inherited from Blitzer resolve beside its config; Blitzline
+overrides resolve beside the Blitzline config. Both selected skip files are
+hashed, including missing-file markers, so creating or editing either invalidates
+extraction and downstream stages. Replaced or bypassed legacy files are not
+treated as active inputs. A changed list also prevents exporting stale cards
+until resume refreshes the run.
+
+Blitzer's `prompt_text` is only a report preamble and is disabled for this JSON
+pipeline. Blitzline's optional `[llm]` profiles are separate and make the configured
+proofreading, translation or review API calls.
 
 Context matching is exact and case-sensitive. A sentence can span many cues;
 there is no 15-cue ceiling. Repeated identical sentences map to the earliest exact
@@ -159,29 +184,43 @@ Exit codes: 0 complete/intentional stop, 1 failed external/file operation,
 
 ## Exports
 
-Ten fields, with the original six first: Word, English, Sentence1, Sentence2,
-Notes, Frequency, Media1, Media2, Source, BlitzlineId. One vocabulary card per
-note. Media uses `[sound:filename]` for both MP3 audio and MP4 video; playback
-behavior must be checked in the Anki client you use. UTF-8 text is escaped before
-HTML rendering. TSV comments describe separator/HTML/columns; TSV has a real
-writer and round-trip check, plus referenced media and import instructions.
+The default `blitzer` preset matches `ref/example_note.apkg`: eleven fields,
+Sentence1/Sentence2 cards generated only for available examples, and an optional
+Recall card enabled by `export.two_way`. `exports/model.py` resolves presets,
+ordered field mappings, multiple templates, CSS, tags, and assets for all three
+adapters. Named `[decks.NAME]` profiles explicitly pair a source language with a
+destination deck and card-type selection, inheriting the example note type.
+`--deck-profile` can infer the language, and source/profile mismatches are rejected
+before processing. The legacy ten-field/single-card format remains available. See
+[Anki formats and customization](anki.md) for full configuration examples.
 
-Templates/CSS are configurable with `export.front_template`, `back_template`,
-and `css`. These apply to APKG and newly created AnkiConnect note types;
-existing Anki templates are preserved, so use a new model name to replace them.
+Media uses `[sound:filename]` for both MP3 and MP4; playback remains client-specific.
+Canonical text is escaped before rendering, including the sentence click toggle.
+TSV includes note fields plus a special tags column, a note-type JSON definition,
+exact template/style files, referenced media, and import instructions. APKG uses
+the optional `genanki` extra, deterministic model/deck IDs, and stable note GUIDs.
+Changing template/style files or assets invalidates portable export caches.
 
-APKG uses the optional `genanki` extra, shared templates, deterministic model/deck
-IDs, and source/language/NFC-lemma note GUIDs. Reimporting the same source/lemma
-keeps identity even after English or notes change. Another recording creates a
-new identity. TSV normally matches duplicates by Word; different recordings can
-collide under Anki's TSV import rules, so read its import guide.
+AnkiConnect API v6 checks model fields before mutations, uploads media, and finds
+notes by their stable identity tag before adding/skipping/updating. Older
+BlitzlineId fields remain searchable. Existing model HTML/CSS updates require
+`export.update_model=true` and the same template set. Scheduling is preserved,
+and per-note receipts recover partial delivery and lost responses. Note-format
+changes do not automatically migrate existing models; choose a distinct name.
 
-Direct delivery uses AnkiConnect API v6. It checks model fields before mutations,
-uploads referenced media, finds a stable identity before each note, skips existing
-notes by default, or updates only shared fields with `export.existing="update"`.
-It never edits the live collection database or scheduling. Per-note receipts
-record partial delivery; a lost add-note response can be retried without adding
-a duplicate. No live Anki action happens unless `anki` is the selected export.
+## Transcription backends
+
+`integrations/asr.py` prepares local audio and dispatches to local WhisperX or
+`remote_asr.py`. The latter owns Modal/HTTP transport, bounded WAV chunks,
+per-chunk validation/cache checksums, Modal call receipts, and rebasing segment
+and word timestamps. `core.py` restores source stream offsets, persists raw ASR,
+and normalizes all providers through the same transcript stage. Re-listening
+uses the selected backend too. Saved settings gain new defaults on resume;
+older saved note definitions retain the legacy preset.
+
+See [transcription setup and worker contracts](transcription.md) for a deployable
+Modal GPU worker, HTTP integration, timing conventions, and recovery. No deployment
+or live remote invocation is performed by configuration loading or `check`.
 
 ## Verification
 

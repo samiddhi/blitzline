@@ -13,13 +13,20 @@ import io
 import shutil
 from pathlib import Path
 
-from blitzline.exports.common import FIELDS, fields, media_paths
-from blitzline.storage import atomic_text
+from blitzline.exports.model import (
+    export_media,
+    note_tags,
+    render_fields,
+    resolve_model,
+)
+from blitzline.storage import atomic_text, write_json
 
 
 def export_tsv(cards, media_dir: Path, destination: Path, settings: dict) -> list[Path]:
     """Write UTF-8 TSV and copy only referenced media, preserving empty columns."""
-    paths = media_paths(cards, media_dir)
+    definition = resolve_model(settings)
+    names = [f["name"] for f in definition["fields"]]
+    paths = export_media(cards, media_dir, definition)
     destination.mkdir(parents=True, exist_ok=True)
     media = destination / "media"
     media.mkdir(exist_ok=True)
@@ -28,7 +35,13 @@ def export_tsv(cards, media_dir: Path, destination: Path, settings: dict) -> lis
         target = media / source.name
         shutil.copy2(source, target)
         copied.append(target)
-    rows = [list(fields(card).values()) for card in cards]
+    rows = [
+        [
+            *render_fields(card, settings, definition).values(),
+            " ".join(note_tags(card, settings)),
+        ]
+        for card in cards
+    ]
     stream = io.StringIO(newline="")
     writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
     writer.writerows(rows)
@@ -37,17 +50,58 @@ def export_tsv(cards, media_dir: Path, destination: Path, settings: dict) -> lis
         raise ValueError("TSV round-trip verification failed")
     path = destination / "cards.tsv"
     atomic_text(
-        path, "#separator:tab\n#html:true\n#columns:" + "\t".join(FIELDS) + "\n" + raw
+        path,
+        "#separator:tab\n#html:true\n#columns:"
+        + "\t".join([*names, "Tags"])
+        + "\n#tags column:"
+        + str(len(names) + 1)
+        + "\n"
+        + raw,
     )
+    model_path = destination / "note-type.json"
+    write_json(
+        model_path,
+        {
+            "name": settings["model"],
+            "deck": settings["deck"],
+            "language": settings.get("language", ""),
+            "deck_profile": settings.get("deck_profile", ""),
+            "fields": names,
+            "templates": definition["templates"],
+            "css": definition["css"],
+            "sort_field": names[definition["sort_field"]],
+        },
+    )
+    templates_dir = destination / "templates"
+    templates_dir.mkdir(exist_ok=True)
+    template_paths = []
+    for index, template in enumerate(definition["templates"], 1):
+        for side in ("front", "back"):
+            template_path = templates_dir / f"{index}-{side}.html"
+            atomic_text(template_path, template[side])
+            template_paths.append(template_path)
+    css_path = templates_dir / "style.css"
+    atomic_text(css_path, definition["css"])
     guide = destination / "IMPORT.md"
     atomic_text(
         guide,
         "# Import into Anki\n\nCopy the files inside media/ to your Anki profile's collection.media directory.\n"
-        "Import cards.tsv as tab-separated text with HTML enabled. Create a note type\n"
-        "with these fields in order: " + ", ".join(FIELDS) + ". Map all ten columns.\n"
-        "Use Word/Sentence1/Media1 on the front and English/Sentence2/Media2/Notes on the back.\n\n"
-        "TSV duplicate detection normally uses the note type's first field (Word).\n"
-        "Choose import duplicate settings deliberately; identical words from different\n"
-        "recordings can collide. APKG and AnkiConnect instead use stable source-linked IDs.\n",
+        "Select destination deck "
+        + settings["deck"]
+        + " and create note type "
+        + settings["model"]
+        + ".\n"
+        "The complete definition is in note-type.json, with these fields in order:\n"
+        + ", ".join(names)
+        + ".\nCreate each listed card template in order using templates/N-front.html and N-back.html;\n"
+        "paste templates/style.css into Styling. The JSON also contains their names and exact contents.\n"
+        "Import cards.tsv as tab-separated text with HTML enabled and map all "
+        + str(len(names))
+        + " note fields; the final column maps to tags via the file header.\n\n"
+        "TSV duplicate detection normally uses the note type's first field ("
+        + names[0]
+        + ").\n"
+        "Choose import duplicate settings deliberately; identical words from different recordings can collide.\n"
+        "APKG and AnkiConnect instead use stable source-linked identities.\n",
     )
-    return [path, guide, *copied]
+    return [path, guide, model_path, css_path, *template_paths, *copied]

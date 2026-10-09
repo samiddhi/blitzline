@@ -1,9 +1,9 @@
 """Render shared Anki fields and validate export prerequisites.
 
 Scope statement: own presentation common to all delivery formats.
-Included: note fields, escaped bold examples, media references, note templates,
-model identity, and validation of local media ownership.
-Excluded: deciding cards (vocabulary.py), generating media (media.py), writing
+Included: canonical/legacy field values, escaped bold examples, media references,
+legacy templates/identity, and validation of local media ownership.
+Excluded: configured note definitions (model.py), deciding cards (vocabulary.py), generating media (media.py), writing
 TSV/packages (tsv.py/package.py), and network requests (anki.py).
 Start here: fields returns the same learner-facing content for every format.
 """

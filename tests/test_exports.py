@@ -48,6 +48,9 @@ class FakeAnki:
         self.notes = {}
         self.models = {}
         self.calls = []
+        self.templates = {}
+        self.styling = {}
+        self.media = []
         self.fail_after_add = False
 
     def __call__(self, url, payload, headers, timeout):
@@ -69,14 +72,37 @@ class FakeAnki:
             return 1
         if action == "createModel":
             self.models[params["modelName"]] = params["inOrderFields"]
+            self.templates[params["modelName"]] = {
+                t["Name"]: {"Front": t["Front"], "Back": t["Back"]}
+                for t in params["cardTemplates"]
+            }
+            self.styling[params["modelName"]] = params["css"]
             return 1
+        if action == "modelTemplates":
+            return self.templates[params["modelName"]]
+        if action == "updateModelTemplates":
+            self.templates[params["model"]["name"]].update(params["model"]["templates"])
+            return None
+        if action == "updateModelStyling":
+            self.styling[params["model"]["name"]] = params["model"]["css"]
+            return None
         if action == "storeMediaFile":
+            self.media.append(params["filename"])
             return params["filename"]
         if action == "findNotes":
             return [
                 i
                 for i, note in self.notes.items()
-                if note["fields"]["BlitzlineId"] in params["query"]
+                if ('"note:' + note["modelName"] + '"') in params["query"]
+                and (
+                    any('"tag:' + tag + '"' in params["query"] for tag in note["tags"])
+                    or (
+                        '"BlitzlineId:'
+                        + note["fields"].get("BlitzlineId", "__missing__")
+                        + '"'
+                    )
+                    in params["query"]
+                )
             ]
         if action == "addNote":
             identity = len(self.notes) + 1
@@ -119,7 +145,7 @@ def test_anki_idempotence_and_update(tmp_path, settings):
         settings["export"],
         transport,
     )
-    assert transport.notes[1]["fields"]["English"] == "new meaning"
+    assert transport.notes[1]["fields"]["Translation"] == "new meaning"
     assert transport.calls.count("addNote") == 1
     assert transport.calls.count("updateNoteFields") == 1
 

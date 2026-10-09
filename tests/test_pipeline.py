@@ -65,7 +65,7 @@ def test_full_pipeline(tmp_path, recording, settings):
     raw = (directory / "exports/tsv/cards.tsv").read_text()
     body = "\n".join(line for line in raw.splitlines() if not line.startswith("#"))
     rows = list(csv.reader(StringIO(body), delimiter="\t"))
-    assert len(rows) == 3 and all(len(row) == 10 for row in rows)
+    assert len(rows) == 3 and all(len(row) == 12 for row in rows)
     assert any("<b>" in row[2] for row in rows)
     before = {p.name: p.stat().st_mtime_ns for p in (directory / "media").glob("*.mp3")}
     resume_pipeline(directory, requester=approve_request)

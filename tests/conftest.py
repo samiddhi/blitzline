@@ -48,11 +48,12 @@ PRAGMA user_version = 1;"""
         )
         for index, (lemma, forms) in enumerate(
             (
-                ("cat", ("cat",)),
+                ("cat", ("cat", "cats")),
                 ("dog", ("dog",)),
                 ("run", ("run", "runs")),
                 ("bird", ("bird",)),
                 ("fly", ("flies",)),
+                ("be", ("be", "am", "is", "are", "was", "were", "being", "been")),
             ),
             1,
         ):

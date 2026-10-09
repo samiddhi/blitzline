@@ -11,7 +11,12 @@ Start here: deliver verifies prerequisites and then uploads media and notes.
 import base64
 from pathlib import Path
 
-from blitzline.exports.common import FIELDS, fields, media_paths
+from blitzline.exports.model import (
+    export_media,
+    note_tags,
+    render_fields,
+    resolve_model,
+)
 from blitzline.integrations.llm import post_json
 from blitzline.records import PipelineError
 from blitzline.storage import read_json, write_json
@@ -39,33 +44,60 @@ def preflight(settings: dict, transport=post_json) -> None:
     if model not in models:
         return
     existing = invoke(url, "modelFieldNames", {"modelName": model}, transport)
-    if existing != FIELDS:
+    definition = resolve_model(settings)
+    if existing != [f["name"] for f in definition["fields"]]:
         raise PipelineError(
             f"Anki model {model!r} has incompatible fields; select a new model name"
         )
+    if settings["update_model"]:
+        templates = invoke(url, "modelTemplates", {"modelName": model}, transport)
+        if list(templates) != [t["name"] for t in definition["templates"]]:
+            raise PipelineError(
+                "Existing card templates differ; select a new model name"
+            )
 
 
 def ensure_model(settings: dict, transport=post_json) -> None:
     """Create the deck and shared note type only after compatibility preflight."""
     url = settings["anki_url"]
     invoke(url, "createDeck", {"deck": settings["deck"]}, transport)
+    definition = resolve_model(settings)
+    templates = [
+        {"Name": t["name"], "Front": t["front"], "Back": t["back"]}
+        for t in definition["templates"]
+    ]
     if settings["model"] in invoke(url, "modelNames", transport=transport):
+        if settings["update_model"]:
+            invoke(
+                url,
+                "updateModelTemplates",
+                {
+                    "model": {
+                        "name": settings["model"],
+                        "templates": {
+                            t["Name"]: {"Front": t["Front"], "Back": t["Back"]}
+                            for t in templates
+                        },
+                    }
+                },
+                transport,
+            )
+            invoke(
+                url,
+                "updateModelStyling",
+                {"model": {"name": settings["model"], "css": definition["css"]}},
+                transport,
+            )
         return
     invoke(
         url,
         "createModel",
         {
             "modelName": settings["model"],
-            "inOrderFields": FIELDS,
-            "css": settings["css"],
+            "inOrderFields": [f["name"] for f in definition["fields"]],
+            "css": definition["css"],
             "isCloze": False,
-            "cardTemplates": [
-                {
-                    "Name": "Vocabulary",
-                    "Front": settings["front_template"],
-                    "Back": settings["back_template"],
-                }
-            ],
+            "cardTemplates": templates,
         },
         transport,
     )
@@ -75,7 +107,8 @@ def deliver(
     cards, media_dir: Path, destination: Path, settings: dict, transport=post_json
 ) -> list[Path]:
     """Deliver idempotently by stable note IDs and record partial successes."""
-    paths = media_paths(cards, media_dir)
+    definition = resolve_model(settings)
+    paths = export_media(cards, media_dir, definition)
     preflight(settings, transport)
     ensure_model(settings, transport)
     destination.mkdir(parents=True, exist_ok=True)
@@ -84,6 +117,9 @@ def deliver(
     state = {
         "endpoint": settings["anki_url"],
         "deck": settings["deck"],
+        "model": settings["model"],
+        "language": settings.get("language", ""),
+        "deck_profile": settings.get("deck_profile", ""),
         "notes": previous.get("notes", {}),
         "state": "running",
     }
@@ -102,7 +138,7 @@ def deliver(
             if returned != path.name:
                 raise PipelineError(f"Anki did not acknowledge media {path.name}")
         for card in cards:
-            result = deliver_note(card, settings, transport)
+            result = deliver_note(card, settings, transport, definition)
             state["notes"][card.id] = result
             write_json(receipt, state)
         state["state"] = "complete"
@@ -114,12 +150,17 @@ def deliver(
     return [receipt]
 
 
-def deliver_note(card, settings: dict, transport=post_json) -> dict:
+def deliver_note(card, settings: dict, transport=post_json, definition=None) -> dict:
     """Find a note by exact identity before skipping, updating, or creating it."""
     url, model = settings["anki_url"], settings["model"]
     escaped_model = model.replace("\\", "\\\\").replace('"', '\\"')
-    query = f'"note:{escaped_model}" "BlitzlineId:{card.id}"'
+    definition = definition or resolve_model(settings)
+    identity = "blitzline_id_" + card.id
+    query = f'"note:{escaped_model}" "tag:{identity}"'
     existing = invoke(url, "findNotes", {"query": query}, transport)
+    if not existing and any(f["name"] == "BlitzlineId" for f in definition["fields"]):
+        query = f'"note:{escaped_model}" "BlitzlineId:{card.id}"'
+        existing = invoke(url, "findNotes", {"query": query}, transport)
     if len(existing) > 1:
         raise PipelineError(f"Multiple Anki notes have identity {card.id}")
     if existing and settings["existing"] == "skip":
@@ -128,15 +169,20 @@ def deliver_note(card, settings: dict, transport=post_json) -> dict:
         invoke(
             url,
             "updateNoteFields",
-            {"note": {"id": existing[0], "fields": fields(card)}},
+            {
+                "note": {
+                    "id": existing[0],
+                    "fields": render_fields(card, settings, definition),
+                }
+            },
             transport,
         )
         return {"note_id": existing[0], "action": "updated"}
     note = {
         "deckName": settings["deck"],
         "modelName": model,
-        "fields": fields(card),
-        "tags": ["blitzline", "blitzline_id_" + card.id],
+        "fields": render_fields(card, settings, definition),
+        "tags": note_tags(card, settings),
         "options": {"allowDuplicate": True},
     }
     identity = invoke(url, "addNote", {"note": note}, transport)

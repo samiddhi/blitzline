@@ -8,22 +8,57 @@ allow_partial = false
 # output_dir = "../.runs"
 
 [asr]
+backend = "local" # local, modal, http; see transcription.md.
 executable = "whisperx" # May be an absolute executable in a separate environment.
 model = "small"
 device = "cpu"
 compute_type = "int8"
 # language = "sl" # Normally mapped from --language slv; set for other packs.
-relisten = false # Second ASR pass on cues marked uncertain during proofreading.
+relisten = false # Uses the selected backend for uncertain proofreading cues.
+# modal_app = "blitzline-asr"
+# modal_function = "transcribe"
+# modal_environment = "production"
+# endpoint = "https://your-worker.example/transcribe" # HTTP worker contract.
+# api_key_env = "TRANSCRIPTION_API_KEY" # HTTP bearer key, never the key itself.
+# remote_compute_type = "float16"
+# chunk_seconds = 600
+# timeout = 7200
+# retries = 2
+# Decoding settings can be supplied in an [asr.options] table.
 max_cue_ms = 8000
 line_length = 42
 pause_ms = 800
 max_chars_per_second = 25 # Report fast cues without changing source text/timing.
 
 [blitzer]
+# Use a Blitzer executable whose `blitz --help` lists the two skip-file options.
 executable = "bltzr"
-# config = "blitzer.toml" # Omit to use Blitzer's usual user config.
+# Blitzer normally reads ~/.config/bltzr/bltzr.toml (XDG config takes priority).
+# Its [languages.CODE] sections can select different lists for each language.
+# config = "bltzr.toml" # A separate Blitzer config; path relative to this file.
 # plugins_dir = "language-packs"
-# known_file = "slv-known.txt"
+# Optional overrides below apply to every language run with this Blitzline config.
+# Each names ONE file containing one word per line. Use either list or both.
+# Omit an override to use the corresponding file from Blitzer's language settings.
+# For multiple languages, prefer putting the lists in Blitzer's config instead.
+#
+# Skip only these EXACT WORDS (word form).
+# For "to be", listing "be" and "am" leaves "is", "are", "was", "were",
+# "being", and "been" counted. Listing "cat" leaves "cats" counted.
+# Slovenian example: listing "sem" and "biti" leaves "sva" counted.
+# skip_exact_words_file = "slv-exact-words.txt"
+#
+# Skip these WORD FAMILIES (lexeme/lemma), using the dictionary.
+# For "to be", list "be" (without "to") to skip "be", "am", "is", "are",
+# "was", "were", "being", and "been". Listing "cat" skips "cat" and "cats".
+# Write basic words here. Families depend on dictionary coverage; bundled English
+# currently lacks some "to be" links. List all eight exact words to skip them all
+# with that dictionary. For Slovenian, the "biti" family includes "sem" and "sva".
+# skip_word_families_file = "slv-word-families.txt"
+#
+# Blitzline reads these files but never adds words to them or saves Blitzer history.
+# It shows basic words on cards; this does not change what either list skips.
+# true bypasses Blitzer's user config; explicit overrides above still apply.
 no_config = false
 
 [llm]
@@ -71,9 +106,31 @@ video_codec = "libx264"
 [export]
 format = "tsv" # tsv, apkg (install the apkg extra), anki (AnkiConnect required).
 deck = "Blitzline"
-model = "Blitzline v1"
+model = "Blitzer Basic"
+preset = "blitzer" # Default matches ref/example_note.apkg; legacy uses old fields.
+two_way = false # Enable translation -> typed-word Recall cards.
+update_model = false # Explicitly update matching live Anki templates/CSS.
+tags = ["blitzline"]
+# css_file = "anki/style.css"
+# assets = ["anki/picture.png"]
+# Ordered fields and multiple templates are customizable; see anki.md.
 anki_url = "http://127.0.0.1:8765"
 existing = "skip" # update replaces Blitzline fields without changing scheduling.
-# front_template = "{{Word}}<br>{{Sentence1}}<br>{{Media1}}"
-# back_template = "{{FrontSide}}<hr id=answer>{{English}}<br>{{Sentence2}}<br>{{Media2}}<br>{{Notes}}"
+# front_template = "{{Word}}<br>{{Sentence1}}<br>{{Sentence1 Audio}}"
+# back_template = "{{FrontSide}}<hr id=answer>{{Translation}}<br>{{Sentence2}}<br>{{Sentence2 Audio}}<br>{{Comments}}"
 # css = ".card { font-family: sans-serif; font-size: 22px; }"
+
+# Explicitly associate each destination deck with its source language and cards.
+# Add/edit profiles for every language you study. --deck-profile selects one;
+# --language selects its single matching profile. The example note type is inherited.
+[decks.slovenian]
+language = "slv"
+deck = "Blitzline::Slovenian"
+card_types = ["Sentence1", "Sentence2"]
+
+[decks.polish]
+language = "pol"
+deck = "Blitzline::Polish"
+card_types = ["Recall", "Sentence1", "Sentence2"] # Selecting Recall enables it.
+# model = "My Polish note type" # Default: inherited model name plus [polish].
+# css_file = "anki/polish.css"

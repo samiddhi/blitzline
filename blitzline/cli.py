@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 
 from blitzline import __version__
-from blitzline.config import get_config, llm_profile
+from blitzline.config import get_config, llm_profile, resolve_language
 from blitzline.core import STAGES, export_run, resume_pipeline, run_pipeline
 from blitzline.integrations.blitzer import preflight
 from blitzline.records import NeedsReview, PipelineError
@@ -46,6 +46,9 @@ def common_options(function):
     """Attach shared explicit configuration and delivery overrides to commands."""
     options = [
         click.option(
+            "--deck-profile", help="Configured language/deck/card-type profile."
+        ),
+        click.option(
             "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path)
         ),
         click.option(
@@ -65,6 +68,11 @@ def transcript_options(function):
     """Attach import, review, and stage-stop choices to run/resume commands."""
     options = [
         click.option(
+            "--asr-backend",
+            type=click.Choice(["local", "modal", "http"]),
+            help="Transcription backend; remote endpoints are configured in TOML.",
+        ),
+        click.option(
             "--srt", type=click.Path(exists=True, dir_okay=False, path_type=Path)
         ),
         click.option(
@@ -83,11 +91,18 @@ def transcript_options(function):
 
 
 def overrides(
-    output_format=None, clips=None, proofread=None, translate=None, allow_partial=None
+    output_format=None,
+    clips=None,
+    proofread=None,
+    translate=None,
+    allow_partial=None,
+    asr_backend=None,
+    deck_profile=None,
 ):
     """Build nested non-None CLI choices for the configuration/application APIs."""
     return {
-        "export": {"format": output_format},
+        "export": {"format": output_format, "deck_profile": deck_profile},
+        "asr": {"backend": asr_backend},
         "media": {"kind": clips},
         "run": {
             "proofread": proofread,
@@ -124,7 +139,9 @@ def cli():
 @cli.command()
 @click.argument("media", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
-    "--language", "-l", required=True, help="Blitzer three-letter language pack code."
+    "--language",
+    "-l",
+    help="Blitzer three-letter language code; inferred from --deck-profile when omitted.",
 )
 @click.option("--output", "directory", type=click.Path(file_okay=False, path_type=Path))
 @common_options
@@ -134,11 +151,13 @@ def run(
     language,
     directory,
     config,
+    deck_profile,
     output_format,
     clips,
     proofread,
     translate,
     allow_partial,
+    asr_backend,
     srt,
     asr_json,
     review_file,
@@ -147,11 +166,20 @@ def run(
     """Process MEDIA, optionally starting from an existing subtitle/transcript."""
     with errors():
         settings = get_config(
-            config, overrides(output_format, clips, proofread, translate, allow_partial)
+            config,
+            overrides(
+                output_format,
+                clips,
+                proofread,
+                translate,
+                allow_partial,
+                asr_backend,
+                deck_profile,
+            ),
         )
         result = run_pipeline(
             media,
-            language,
+            resolve_language(settings, language),
             settings,
             directory=directory,
             srt=srt,
@@ -172,11 +200,13 @@ def run(
 def resume(
     run_dir,
     config,
+    deck_profile,
     output_format,
     clips,
     proofread,
     translate,
     allow_partial,
+    asr_backend,
     srt,
     asr_json,
     review_file,
@@ -189,7 +219,13 @@ def resume(
             run_dir,
             settings=selected,
             overrides=overrides(
-                output_format, clips, proofread, translate, allow_partial
+                output_format,
+                clips,
+                proofread,
+                translate,
+                allow_partial,
+                asr_backend,
+                deck_profile,
             ),
             srt=srt,
             asr_json=asr_json,
@@ -212,14 +248,20 @@ def resume(
     required=True,
 )
 @click.option("--allow-partial/--no-allow-partial", default=None)
-def export_command(run_dir, config, output_format, allow_partial):
+@click.option(
+    "--deck-profile",
+    help="Configured destination deck profile for this run's language.",
+)
+def export_command(run_dir, config, output_format, allow_partial, deck_profile):
     """Deliver existing validated cards as TSV, APKG, or directly to Anki."""
     with errors():
         result = export_run(
             run_dir,
             settings=get_config(config) if config else None,
             overrides=overrides(
-                output_format=output_format, allow_partial=allow_partial
+                output_format=output_format,
+                allow_partial=allow_partial,
+                deck_profile=deck_profile,
             ),
         )
         for path in result["paths"]:
@@ -240,12 +282,29 @@ def check_command(config, language):
             ("Blitzer", settings["blitzer"]["executable"]),
             ("FFmpeg", settings["media"]["ffmpeg"]),
             ("FFprobe", settings["media"]["ffprobe"]),
-            ("ASR (not needed for imported SRT/JSON)", settings["asr"]["executable"]),
         ):
             path = shutil.which(executable)
             click.echo(f"{label}: {path or 'missing'}")
             if not path and not label.startswith("ASR"):
                 missing.append(label)
+        for name, profile in settings["decks"].items():
+            click.echo(
+                f"Deck profile {name}: {profile['language']} -> {profile['deck']}; card types: {', '.join(profile['card_types'])}"
+            )
+        asr = settings["asr"]
+        click.echo(f"ASR backend: {asr['backend']} (not needed for imported SRT/JSON)")
+        if asr["backend"] == "local":
+            click.echo(f"WhisperX: {shutil.which(asr['executable']) or 'missing'}")
+        elif asr["backend"] == "modal":
+            click.echo(
+                f"Modal: {asr['modal_app']}/{asr['modal_function']}; SDK: {'available' if find_spec('modal') else 'install blitzline[modal]'}"
+            )
+        else:
+            click.echo(f"Remote ASR endpoint: {asr['endpoint']}")
+            if asr["api_key_env"]:
+                click.echo(
+                    f"{asr['api_key_env']}: {'set' if os.environ.get(asr['api_key_env']) else 'missing'}"
+                )
         click.echo(
             f"APKG writer: {'available' if find_spec('genanki') else 'install blitzline[apkg]'}"
         )

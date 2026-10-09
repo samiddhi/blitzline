@@ -10,17 +10,32 @@ Start here: export_package returns the generated .apkg path. Install the
 """
 
 import os
+import re
 import zipfile
 from pathlib import Path
 
-from blitzline.exports.common import (
-    FIELDS,
-    fields,
-    media_paths,
-    model_identity,
+from blitzline.exports.model import (
+    export_media,
+    model_id,
+    note_tags,
+    render_fields,
+    resolve_model,
 )
 from blitzline.records import PipelineError
 from blitzline.storage import digest
+
+
+def requirement_template(value: str) -> str:
+    """Expose filtered fields to genanki's Mustache-based card requirement analysis."""
+
+    def unfiltered(match):
+        """Retain section tags and reduce Anki display filters to their source field."""
+        reference = match.group(1).strip()
+        if reference.startswith(("#", "^", "/")):
+            return match.group(0)
+        return "{{" + reference.split(":")[-1] + "}}"
+
+    return re.sub(r"{{\s*([^{}]+?)\s*}}", unfiltered, value)
 
 
 def export_package(
@@ -33,29 +48,44 @@ def export_package(
         raise PipelineError(
             "APKG export requires: pip install 'blitzline[apkg]'"
         ) from error
-    paths = media_paths(cards, media_dir)
+    definition = resolve_model(settings)
+    paths = export_media(cards, media_dir, definition)
     model = genanki.Model(
-        model_identity(settings["model"]),
+        model_id(settings["model"], definition),
         settings["model"],
-        fields=[{"name": name} for name in FIELDS],
+        fields=[{"name": f["name"]} for f in definition["fields"]],
         templates=[
-            {
-                "name": "Vocabulary",
-                "qfmt": settings["front_template"],
-                "afmt": settings["back_template"],
-            }
+            {"name": t["name"], "qfmt": t["front"], "afmt": t["back"]}
+            for t in definition["templates"]
         ],
-        css=settings["css"],
+        css=definition["css"],
+        sort_field_index=definition["sort_field"],
     )
+    # genanki uses generic Mustache for requirements; it does not know Anki filters.
+    # Analyze unfiltered references while retaining the original shipped templates.
+    requirement_model = genanki.Model(
+        model.model_id,
+        model.name,
+        fields=model.fields,
+        templates=[
+            {**t, "qfmt": requirement_template(t["qfmt"])} for t in model.templates
+        ],
+    )
+    try:
+        model._req = requirement_model._req
+    except Exception:
+        raise PipelineError(
+            "Cannot determine card-generation requirements; each front must reference a note field"
+        ) from None
     deck_id = int(digest(settings["deck"])[:8], 16) % (2**31 - 1) + 1
     deck = genanki.Deck(deck_id, settings["deck"])
     for card in cards:
         deck.add_note(
             genanki.Note(
                 model=model,
-                fields=list(fields(card).values()),
+                fields=list(render_fields(card, settings, definition).values()),
                 guid=card.id,
-                tags=["blitzline", "blitzline_id_" + card.id],
+                tags=note_tags(card, settings),
             )
         )
     package = genanki.Package(deck)

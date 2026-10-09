@@ -2,7 +2,7 @@
 
 Scope statement: own the subprocess contract and its external input hashes.
 Included: mandatory flags, safe JSON extraction, CLI version checks,
-and config/known-list/pack fingerprints for invalidating cached extraction.
+and config/skip-list/pack fingerprints for invalidating cached extraction.
 Excluded: importing Blitzer internals, changing its user data, building packs,
 context mapping (vocabulary.py), and pipeline stage order (core.py).
 Start here: extract runs the CLI; dependencies describes its read-only inputs.
@@ -51,8 +51,10 @@ def arguments(language: str, path: Path, settings: dict) -> list[str]:
         ("config", "--config"),
         ("plugins_dir", "--plugins-dir"),
         ("known_file", "--known-file"),
+        ("skip_exact_words_file", "--skip-exact-words-file"),
+        ("skip_word_families_file", "--skip-word-families-file"),
     ):
-        if settings[key]:
+        if settings.get(key):
             args.extend([flag, settings[key]])
     return args
 
@@ -84,12 +86,25 @@ def selected_config(settings: dict) -> Path | None:
         return None
     explicit = settings["config"] or os.environ.get("BLITZER_CONFIG")
     if explicit:
-        return Path(explicit).expanduser().resolve()
+        return Path(resolve_path(explicit, Path.cwd()))
     root = os.environ.get("XDG_CONFIG_HOME")
     native = Path(root) / "bltzr" if root else Path(user_config_dir("bltzr"))
-    home = Path.home() / ".config" / "bltzr" / "config.toml"
-    paths = [native / "config.toml", home] if root else [home, native / "config.toml"]
+    home = Path.home() / ".config" / "bltzr" / "bltzr.toml"
+    paths = [native / "bltzr.toml", home] if root else [home, native / "bltzr.toml"]
     return next((p for p in paths if p.is_file()), None)
+
+
+def filtering_paths(options: dict, settings: dict, base: Path) -> list[Path]:
+    """Track only the lists read by Blitzer after explicit file overrides."""
+    skip_keys = ("skip_exact_words_file", "skip_word_families_file")
+    modern = any(settings.get(key) or key in options for key in skip_keys)
+    if modern:
+        values = [settings.get(key) or options.get(key) for key in skip_keys]
+    else:
+        values = [settings.get("known_file") or options.get("known_file")]
+        values.extend(options.get("exclusions", []))
+        values.extend(options.get("forms_only", []))
+    return [Path(resolve_path(value, base)) for value in values if value]
 
 
 def dependencies(language: str, settings: dict, runner=subprocess.run) -> dict:
@@ -113,12 +128,9 @@ def dependencies(language: str, settings: dict, runner=subprocess.run) -> dict:
     if path:
         paths.append(path)
     options = {**raw.get("defaults", {}), **raw.get("languages", {}).get(language, {})}
-    if settings["known_file"]:
-        options["known_file"] = settings["known_file"]
-    for name in ("known_file", "custom_order", "exclusions", "forms_only"):
-        values = options.get(name, [])
-        values = [values] if isinstance(values, str) else values
-        paths.extend(Path(resolve_path(value, base)) for value in values)
+    paths.extend(filtering_paths(options, settings, base))
+    if options.get("sort") == "custom" and options.get("custom_order"):
+        paths.append(Path(resolve_path(options["custom_order"], base)))
     if pack.is_dir():
         paths.extend(p for p in pack.rglob("*") if p.is_file())
     # Bundled English is tied to the reported CLI version when no user pack exists.

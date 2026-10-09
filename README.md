@@ -19,7 +19,8 @@ python3 -m venv .venv
 .venv/bin/blitzline run recording.mp4 --language slv --config docs/config.example.toml
 ```
 
-Install FFmpeg, Blitzer with your language pack, and WhisperX separately.
+Install FFmpeg and Blitzer with your language pack separately. Transcribe locally
+with WhisperX or [offload to Modal or an HTTP worker](docs/transcription.md).
 Choose your model and set its API key before using the example config.
 WhisperX can run in another environment via `asr.executable`.
 
@@ -28,6 +29,18 @@ WhisperX can run in another environment via `asr.executable`.
 ```sh
 pip install bltzr
 ```
+
+Use a Blitzer build whose `bltzr blitz --help` lists
+`--skip-exact-words-file` and `--skip-word-families-file` for the new lists.
+If working from the updated Blitzer checkout, `blitzer.executable` can point
+to its `.venv/bin/bltzr`.
+
+Choose [which words to skip](docs/word-lists.md): **exact words (word form)**
+skip only listed spellings, while **word families (lexeme/lemma)** skip a word
+and its dictionary-connected forms. For **to be**, an exact list containing
+**be** and **am** leaves **are** counted; a family list containing **be** skips
+its recognized forms. Blitzline uses your Blitzer lists automatically, or you
+can override either file in the `[blitzer]` section of your Blitzline config.
 
 Already have subtitles? Skip transcription:
 
@@ -47,6 +60,14 @@ blitzline export RUN_DIR --format apkg
 blitzline export RUN_DIR --format anki
 ```
 
+The default [Anki note preset](docs/anki.md) matches `ref/example_note.apkg`:
+clickable sentence cards, example audio, and optional typed recall. Fields,
+mappings, multiple templates, CSS/JavaScript, tags, and assets are configurable.
+The legacy format remains available. Configure a language and card types for each
+[deck profile](docs/anki.md#multiple-languages-and-explicit-deck-profiles), then use
+`--deck-profile slovenian` to select its deck and infer its source language. One
+configuration supports multiple languages and decks.
+
 Use `--clips video` for video examples, `--translate` for English subtitles, and
 `--proofread` for transcript review. Optional `asr.relisten` performs a second ASR
 pass on questionable audio; a text-only model is never presented as listening.
@@ -55,8 +76,8 @@ cards and keeps a report of omissions.
 
 Runs contain `artifacts/`, `media/`, `exports/`, `logs/`, and `manifest.json`.
 The command prints their location. Resume reuses checksum-valid stages and
-invalidates downstream work when transcript/config/known-list inputs change.
-Blitzer's known lists and history are never updated by this pipeline.
+invalidates downstream work when transcript/config/skip-list inputs change.
+Blitzer's skip lists and history are never updated by this pipeline.
 
 The original requirements and prompt are retained in [the vision](docs/vision.md).
 See [the implementation checklist](docs/plan.md) and

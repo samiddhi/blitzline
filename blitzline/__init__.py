@@ -6,4 +6,4 @@ Excluded: CLI startup (cli.py), pipeline execution (core.py), and I/O.
 Start here: core.run_pipeline provides the application API.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

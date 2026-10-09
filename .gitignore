@@ -6,5 +6,6 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+maintenance/work/
 .runs/
 .DS_Store

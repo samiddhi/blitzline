@@ -80,6 +80,10 @@ invalidates downstream work when transcript/config/skip-list inputs change.
 Blitzer's skip lists and history are never updated by this pipeline.
 
 The original requirements and prompt are retained in [the vision](docs/vision.md).
+Publish releases with `make release`; see the [one-time GitHub/PyPI setup and
+release steps](maintenance/RELEASING.md). The helper bumps the patch version and
+publishes a GitHub release, which triggers the PyPI workflow.
+
 See [the implementation checklist](docs/plan.md) and
 [developer/configuration guide](docs/development.md) for stage contracts,
 limitations, and verification. Every Python module documents its scope and

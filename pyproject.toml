@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "blitzline"
 version = "0.1.0"
 description = "Turn foreign-language recordings into subtitle-linked Anki vocabulary."
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["click>=8.1", "platformdirs>=4"]
 
 [project.optional-dependencies]
 apkg = ["genanki>=0.13.1,<0.14"]
 modal = ["modal>=1.0,<2"]
-dev = ["pytest>=8", "ruff>=0.11", "genanki>=0.13.1,<0.14"]
+dev = ["pytest>=8", "ruff>=0.11", "genanki>=0.13.1,<0.14", "bump-my-version>=1", "build>=1.2", "twine>=6"]
 
 [project.scripts]
 blitzline = "blitzline.cli:cli"
@@ -32,3 +33,18 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.setuptools.package-data]
 "blitzline.exports" = ["presets/*.json"]
+
+[tool.bumpversion]
+commit = false
+tag = false
+allow_dirty = true
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "blitzline/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'

@@ -103,7 +103,7 @@ def test_config_discovery_matches_blitzer(settings, tmp_path, monkeypatch):
     xdg = tmp_path / "xdg" / "bltzr" / "bltzr.toml"
     xdg.parent.mkdir(parents=True)
     (xdg.parent / "config.toml").write_text("obsolete filename")
-    assert blitzer.selected_config(options) == home
+    assert blitzer.selected_config(options) is None
     xdg.write_text("")
     assert blitzer.selected_config(options) == xdg
     monkeypatch.setenv("CONFIG_DIR", str(tmp_path))
@@ -115,19 +115,19 @@ def test_config_discovery_matches_blitzer(settings, tmp_path, monkeypatch):
     assert blitzer.selected_config(options) is None
 
 
-def test_native_config_fallback(settings, tmp_path, monkeypatch):
-    """Without XDG, prefer the home file and then the native platform file."""
+def test_default_config_uses_xdg_home_without_native_fallback(
+    settings, tmp_path, monkeypatch
+):
+    """Match Blitzer's XDG selection instead of searching unrelated native platform paths."""
     options = settings["blitzer"]
     options["no_config"] = False
     monkeypatch.delenv("XDG_CONFIG_HOME")
-    native = tmp_path / "native"
-    native.mkdir()
-    monkeypatch.setattr(blitzer, "user_config_dir", lambda app: str(native))
-    (native / "bltzr.toml").write_text("")
-    assert blitzer.selected_config(options) == native / "bltzr.toml"
+    assert blitzer.selected_config(options) is None
     home = Path.home() / ".config" / "bltzr" / "bltzr.toml"
     home.parent.mkdir(parents=True)
     home.write_text("")
+    assert blitzer.selected_config(options) == home
+    monkeypatch.setenv("XDG_CONFIG_HOME", "relative-invalid-root")
     assert blitzer.selected_config(options) == home
 
 

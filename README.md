@@ -11,6 +11,9 @@ JSON; Blitzline generates timestamps, bold examples, media references, and TSV.
 
 Start with the [short setup guide](docs/setup.md) and
 [example configuration](docs/config.example.toml).
+The [Blitzline man page](man/blitzline.1) begins with a first-run walkthrough,
+then documents every command and flag. In a checkout, read it with
+`man ./man/blitzline.1`.
 
 ```sh
 python3 -m venv .venv
@@ -75,6 +78,12 @@ Unresolved items stop delivery; `--allow-partial` explicitly exports accepted
 cards and keeps a report of omissions.
 
 Runs contain `artifacts/`, `media/`, `exports/`, `logs/`, and `manifest.json`.
+After checking an exported APKG or TSV in the destination application, run
+`blitzline clean RUN_DIR` to preview removal of intermediate artifacts, media,
+logs, and request caches. `blitzline clean RUN_DIR --apply` performs the cleanup,
+keeps the portable export and a small receipt, and makes the run nonresumable.
+Nothing is cleaned automatically after export. Direct Anki delivery cannot be
+cleaned this way because it has no portable output to retain.
 The command prints their location. Resume reuses checksum-valid stages and
 invalidates downstream work when transcript/config/skip-list inputs change.
 Blitzer's skip lists and history are never updated by this pipeline.

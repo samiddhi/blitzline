@@ -21,10 +21,23 @@
 5. Check: `blitzline check --config YOUR_CONFIG`.
    Run: `blitzline run recording.mp4 --language slv --config YOUR_CONFIG`.
 
+For a regular installed CLI, place the configuration at
+`$XDG_CONFIG_HOME/blitzline/config.toml` and omit `--config`. If
+`XDG_CONFIG_HOME` is unset, Blitzline uses the platform's user config directory.
+An absolute `XDG_DATA_HOME` puts new runs under
+`$XDG_DATA_HOME/blitzline/runs`; otherwise the platform user data directory is
+used. Both XDG variables work on macOS as well. `--config` and `--output` still
+override these defaults, and paths inside TOML resolve relative to the TOML
+file. Keep API keys in environment variables, not in TOML.
+
 The command prints the run folder. `artifacts/source.srt` is the source-language
 subtitle; `artifacts/english.srt` is created when translation is enabled.
 Your cards and media are under `exports/`. Import `.apkg` through Anki's Import
 command, or follow `exports/tsv/IMPORT.md` for TSV.
+Once you have inspected the imported deck, preview intermediate-file cleanup
+with `blitzline clean RUN_DIR`. Add `--apply` only when you want to keep just the
+portable export and a small receipt. This removes review JSON, request caches,
+logs, and working clips; the run cannot be resumed afterward.
 
 For direct delivery, keep Anki open with [AnkiConnect](https://ankiweb.net/shared/info/2055492159)
 and choose `--format anki`. Blitzline uses the configured deck and note type.

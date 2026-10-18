@@ -9,6 +9,7 @@ Start here: get_config returns a new validated settings dictionary;
 llm_profile selects a shared or stage-specific provider profile.
 """
 
+import math
 import os
 import re
 import tomllib
@@ -28,11 +29,19 @@ PROVIDERS = {
 }
 
 
+def user_run_directory() -> Path:
+    """Honor an absolute XDG data root, otherwise use the platform default."""
+    root = os.environ.get("XDG_DATA_HOME")
+    if root and Path(root).is_absolute():
+        return Path(root) / "blitzline" / "runs"
+    return Path(user_data_dir("blitzline")) / "runs"
+
+
 def defaults() -> dict:
     """Return independent defaults without reading credentials or making files."""
     return {
         "run": {
-            "output_dir": str(Path(user_data_dir("blitzline")) / "runs"),
+            "output_dir": str(user_run_directory()),
             "proofread": False,
             "translate": False,
             "allow_partial": False,
@@ -75,7 +84,11 @@ def defaults() -> dict:
             "proofread": "",
             "translate": "",
             "review": "",
+            "ambiguity_review": "",
+            "audit_review": "",
+            "form_lexicon": "",
             "batch_size": 20,
+            "ambiguity_batch_size": 5,
             "max_chars": 24000,
             "repair_attempts": 2,
         },
@@ -129,7 +142,11 @@ def config_path(explicit=None) -> Path | None:
             raise ValueError(f"Configuration does not exist: {path}")
         return path
     root = os.environ.get("XDG_CONFIG_HOME")
-    directory = Path(root) / "blitzline" if root else Path(user_config_dir("blitzline"))
+    directory = (
+        Path(root) / "blitzline"
+        if root and Path(root).is_absolute()
+        else Path(user_config_dir("blitzline"))
+    )
     path = directory / "config.toml"
     return path if path.is_file() else None
 
@@ -159,6 +176,7 @@ def merge_config(raw: dict, base: Path) -> dict:
         ("blitzer", "known_file"),
         ("blitzer", "skip_exact_words_file"),
         ("blitzer", "skip_word_families_file"),
+        ("llm", "form_lexicon"),
     ):
         value = text(result[section][name], f"{section}.{name}", empty=True)
         if value:
@@ -313,7 +331,7 @@ def validate_config(settings: dict) -> None:
             "chunk_seconds",
         ),
         "blitzer": ("timeout",),
-        "llm": ("batch_size", "max_chars"),
+        "llm": ("batch_size", "ambiguity_batch_size", "max_chars"),
         "media": ("timeout", "max_clip_ms"),
     }.items():
         for name in names:
@@ -322,7 +340,14 @@ def validate_config(settings: dict) -> None:
     integer(settings["llm"]["repair_attempts"], "llm.repair_attempts")
     for name, profile in settings["profiles"].items():
         validate_profile(name, profile)
-    for stage in ("default", "proofread", "translate", "review"):
+    for stage in (
+        "default",
+        "proofread",
+        "translate",
+        "review",
+        "ambiguity_review",
+        "audit_review",
+    ):
         name = settings["llm"][stage]
         if name and name not in settings["profiles"]:
             raise ValueError(f"llm.{stage} references missing profile {name!r}")
@@ -435,6 +460,9 @@ def validate_profile(name: str, profile: dict) -> None:
         "base_url",
         "api_key_env",
         "response_format",
+        "reasoning_enabled",
+        "openrouter_provider",
+        "openrouter_max_price",
         "temperature",
         "max_tokens",
         "timeout",
@@ -462,6 +490,31 @@ def validate_profile(name: str, profile: dict) -> None:
         "text",
     }:
         raise ValueError(f"Profile {name}: invalid response_format")
+    if "reasoning_enabled" in profile:
+        if (
+            profile["provider"] != "openrouter"
+            or type(profile["reasoning_enabled"]) is not bool
+        ):
+            raise ValueError(
+                f"Profile {name}: reasoning_enabled must be a boolean for OpenRouter"
+            )
+    if "openrouter_provider" in profile:
+        if profile["provider"] != "openrouter":
+            raise ValueError(f"Profile {name}: openrouter_provider requires OpenRouter")
+        text(profile["openrouter_provider"], f"Profile {name} openrouter_provider")
+    if "openrouter_max_price" in profile:
+        prices = profile["openrouter_max_price"]
+        if profile["provider"] != "openrouter" or not isinstance(prices, dict):
+            raise ValueError(
+                f"Profile {name}: openrouter_max_price requires OpenRouter"
+            )
+        if set(prices) != {"prompt", "completion"} or any(
+            type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+            for value in prices.values()
+        ):
+            raise ValueError(
+                f"Profile {name}: openrouter_max_price needs positive prompt and completion rates"
+            )
     for key, fallback, minimum in (
         ("timeout", 120, 1),
         ("retries", 2, 0),

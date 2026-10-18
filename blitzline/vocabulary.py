@@ -148,32 +148,39 @@ def map_candidates(rows, cues) -> list[Candidate]:
     return candidates
 
 
-def candidate_groups(candidates) -> list[list[Candidate]]:
-    """Keep candidates sharing highlighted occurrences in the same review group."""
-    groups = []
-    remaining = list(candidates)
-    while remaining:
-        group = [remaining.pop(0)]
-        pending = list(group)
-        while pending:
-            keys = occurrence_keys(pending.pop())
-            linked = [
-                candidate
-                for candidate in remaining
-                if keys.intersection(occurrence_keys(candidate))
-            ]
-            group.extend(linked)
-            pending.extend(linked)
-            remaining = [
-                candidate for candidate in remaining if candidate not in linked
-            ]
-        groups.append(group)
-    return groups
+def candidate_groups(candidates, lemma_forms=None) -> list[list[Candidate]]:
+    """Keep candidates with any shared observed or supplied form in one group."""
+    candidates = list(candidates)
+    parent = list(range(len(candidates)))
+
+    def root(index):
+        """Find a candidate's shared-form component with path compression."""
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    first_by_form = {}
+    for index, candidate in enumerate(candidates):
+        forms = {highlighted_form(context) for context in candidate.contexts}
+        forms.update(lemma_forms.get(candidate.term, ()) if lemma_forms else ())
+        for raw_form in forms:
+            form = unicodedata.normalize("NFC", raw_form).casefold()
+            if form in first_by_form:
+                parent[root(index)] = root(first_by_form[form])
+            else:
+                first_by_form[form] = index
+    groups = {}
+    for index, candidate in enumerate(candidates):
+        groups.setdefault(root(index), []).append(candidate)
+    return list(groups.values())
 
 
-def occurrence_keys(candidate: Candidate) -> set:
-    """Return exact sentence/highlight keys for competing lemma detection."""
-    return {(c.text, c.highlight_start, c.highlight_end) for c in candidate.contexts}
+def highlighted_form(context: Context) -> str:
+    """Normalize the wordform selected by Blitzer for cross-sentence grouping."""
+    return unicodedata.normalize(
+        "NFC", context.text[context.highlight_start : context.highlight_end]
+    ).casefold()
 
 
 def review_template(candidates) -> dict:

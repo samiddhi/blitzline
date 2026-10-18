@@ -30,6 +30,7 @@ from blitzline.integrations import asr, blitzer
 from blitzline.integrations.llm import request_json
 from blitzline.media import clip_plan, extract_clip, probe, tool_identity
 from blitzline.records import (
+    PROMPT_VERSION,
     NeedsReview,
     PipelineError,
     encode,
@@ -122,6 +123,8 @@ def run_pipeline(
             if (directory / "manifest.json").is_file()
             else {}
         )
+        if previous.get("state") == "cleaned":
+            raise PipelineError("This run was cleaned and can no longer be resumed")
         if previous and (
             previous.get("source_hash") != source_hash
             or previous.get("request", {}).get("language") != language
@@ -229,6 +232,7 @@ def execute_pipeline(
             settings["asr"],
             llm_profile(settings, "proofread"),
             settings["llm"],
+            PROMPT_VERSION,
         ],
         lambda: prepare_proofread(store, source, language, cues, settings, requester),
     )
@@ -271,7 +275,21 @@ def execute_pipeline(
         raise ValueError(f"Review file is missing: {review_path}")
     reviewed = store.stage(
         "05-review",
-        [candidates_raw, review_hash, llm_profile(settings, "review"), settings["llm"]],
+        [
+            candidates_raw,
+            review_hash,
+            llm_profile(settings, "review"),
+            llm_profile(settings, "ambiguity_review")
+            if settings["llm"]["ambiguity_review"]
+            else None,
+            llm_profile(settings, "audit_review")
+            if settings["llm"]["audit_review"]
+            else None,
+            settings["llm"],
+            fingerprint(Path(settings["llm"]["form_lexicon"]))
+            if settings["llm"]["form_lexicon"]
+            else None,
+        ],
         lambda: prepare_review(
             store, candidates, language, settings, review_path, requester
         ),
@@ -473,7 +491,8 @@ def prepare_review(store, candidates, language, settings, review_path, requester
     """Validate manual/API review and write reports without overwriting user edits."""
     editable = store.artifact("review.json")
     template = store.artifact("review-template.json")
-    write_json(template, review_template(candidates))
+    provider_errors = []
+    audit_corrections = None
     if review_path:
         result = read_json(Path(review_path))
     elif candidates and llm_profile(settings, "review"):
@@ -484,10 +503,16 @@ def prepare_review(store, candidates, language, settings, review_path, requester
             store.directory / ".cache" / "requests",
             requester,
         )
+        provider_errors = result.get("errors", [])
+        audit_corrections = result.get("audit_corrections")
         result = {"decisions": result["decisions"]}
     else:
         result = review_template(candidates)
+    write_json(template, review_template(candidates))
     valid, errors = validate_decisions(result, candidates)
+    errors = provider_errors + [
+        error for error in errors if error not in provider_errors
+    ]
     report = {
         "decisions": valid,
         "errors": errors,
@@ -495,9 +520,14 @@ def prepare_review(store, candidates, language, settings, review_path, requester
     }
     report_path = store.artifact("05-review-report.json")
     write_json(report_path, report)
+    artifacts = [report_path, template]
+    if audit_corrections is not None:
+        audit_path = store.artifact("05-audit-corrections.json")
+        write_json(audit_path, {"corrections": audit_corrections})
+        artifacts.append(audit_path)
     if not editable.exists():
         write_json(editable, {"decisions": valid})
-    return report, [report_path, template]
+    return report, artifacts
 
 
 def prepare_media(store, cards, source, info, settings):
@@ -589,6 +619,8 @@ def resume_pipeline(
     """Resume the saved media request with optional settings/transcript/review changes."""
     directory = Path(directory).expanduser().resolve()
     manifest = read_json(directory / "manifest.json")
+    if manifest.get("state") == "cleaned":
+        raise PipelineError("This run was cleaned and can no longer be resumed")
     selected = settings or upgrade_settings(manifest["settings"])
     # Revalidate merged CLI settings rather than silently accepting saved typos.
     selected = deepcopy(selected)
@@ -616,6 +648,10 @@ def export_run(directory, *, settings=None, overrides=None, transport=None) -> d
     directory = Path(directory).expanduser().resolve()
     with run_lock(directory):
         manifest = read_json(directory / "manifest.json")
+        if manifest.get("state") == "cleaned":
+            raise PipelineError(
+                "This run was cleaned and can no longer be exported again"
+            )
         selected = settings or upgrade_settings(manifest["settings"])
         selected = deepcopy(selected)
         for section, values in (overrides or {}).items():

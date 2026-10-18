@@ -8,15 +8,18 @@ Start here: test_openrouter_request inspects the actual adapter's HTTP boundary.
 """
 
 import json
+import ssl
+from urllib.error import URLError
 
 import pytest
 from conftest import configure_llm
 from test_vocabulary import rows
 
-from blitzline.config import get_config, llm_profile, validate_config
+from blitzline.config import config_path, get_config, llm_profile, validate_config
 from blitzline.integrations.llm import (
     RequestFailure,
     decode_response,
+    post_json,
     request_json,
     request_payload,
 )
@@ -37,10 +40,25 @@ def test_config_precedence_and_paths(tmp_path, monkeypatch):
         get_config(path)
 
 
+def test_xdg_config_and_data_roots_on_macos_too(tmp_path, monkeypatch):
+    """Honor explicit XDG roots for both configuration and default run storage."""
+    monkeypatch.delenv("BLITZLINE_CONFIG", raising=False)
+    config_root = tmp_path / "config"
+    data_root = tmp_path / "data"
+    path = config_root / "blitzline/config.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text("[run]\ntranslate = false\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_root))
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_root))
+    assert config_path() == path
+    assert get_config()["run"]["output_dir"] == str(data_root / "blitzline/runs")
+
+
 def test_openrouter_request(settings, tmp_path, monkeypatch):
     """Use OpenRouter's endpoint, bearer key, app title, and JSON parameter routing."""
     configure_llm(settings)
     settings["profiles"]["router"]["response_format"] = "json_schema"
+    settings["profiles"]["router"]["reasoning_enabled"] = False
     profile = llm_profile(settings, "review")
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret-test-value")
     calls = []
@@ -63,6 +81,7 @@ def test_openrouter_request(settings, tmp_path, monkeypatch):
     assert headers["X-OpenRouter-Title"] == "Blitzline"
     assert payload["provider"] == {"require_parameters": True}
     assert payload["response_format"]["json_schema"]["strict"] is True
+    assert payload["reasoning"] == {"enabled": False}
     monkeypatch.delenv("OPENROUTER_API_KEY")
     request_json(profile, "Review", [], review_schema(), tmp_path, transport)
     assert len(calls) == 1
@@ -87,6 +106,65 @@ def test_deepseek_and_compatible(settings):
     assert llm_profile(settings, "review")["base_url"].endswith("/v1")
     profile = llm_profile(settings, "translate")
     assert "provider" not in request_payload(profile, "Review", {}, review_schema())
+    assert "reasoning" not in request_payload(profile, "Review", {}, review_schema())
+
+
+def test_reasoning_option_requires_openrouter_boolean(settings):
+    """Reject ambiguous values and avoid forwarding OpenRouter-only settings elsewhere."""
+    settings["profiles"] = {
+        "router": {
+            "provider": "openrouter",
+            "model": "example",
+            "reasoning_enabled": False,
+        }
+    }
+    validate_config(settings)
+    for value in (0, "false", None):
+        settings["profiles"]["router"]["reasoning_enabled"] = value
+        with pytest.raises(ValueError, match="reasoning_enabled"):
+            validate_config(settings)
+    settings["profiles"]["router"].update(provider="deepseek", reasoning_enabled=False)
+    with pytest.raises(ValueError, match="reasoning_enabled"):
+        validate_config(settings)
+
+
+def test_openrouter_provider_pin(settings):
+    """Keep a cost-bound audit on the named provider without fallback."""
+    settings["profiles"] = {
+        "audit": {
+            "provider": "openrouter",
+            "model": "deepseek/deepseek-v4.1-flash-1017",
+            "openrouter_provider": "deepseek",
+            "reasoning_enabled": True,
+        }
+    }
+    settings["llm"]["audit_review"] = "audit"
+    validate_config(settings)
+    payload = request_payload(llm_profile(settings, "audit_review"), "Audit", {}, {})
+    assert payload["provider"] == {
+        "require_parameters": True,
+        "only": ["deepseek"],
+        "allow_fallbacks": False,
+    }
+
+
+def test_openrouter_price_ceiling(settings):
+    """Route a thinking audit to any provider within both per-token ceilings."""
+    settings["profiles"] = {
+        "audit": {
+            "provider": "openrouter",
+            "model": "deepseek/deepseek-v4.1-flash-1017",
+            "openrouter_max_price": {"prompt": 0.15, "completion": 0.60},
+            "reasoning_enabled": True,
+        }
+    }
+    settings["llm"]["audit_review"] = "audit"
+    validate_config(settings)
+    payload = request_payload(llm_profile(settings, "audit_review"), "Audit", {}, {})
+    assert payload["provider"] == {
+        "require_parameters": True,
+        "max_price": {"prompt": 0.15, "completion": 0.60},
+    }
 
 
 def test_retry_and_truncated_response(settings, tmp_path, monkeypatch):
@@ -107,10 +185,41 @@ def test_retry_and_truncated_response(settings, tmp_path, monkeypatch):
             profile, "Review", [], review_schema(), tmp_path, transport, waits.append
         )
     assert len(attempts) == 3 and waits == [1, 2]
-    with pytest.raises(RequestFailure):
+    with pytest.raises(RequestFailure, match="finish_reason=length"):
         decode_response(
             {"choices": [{"finish_reason": "length", "message": {"content": "{}"}}]}
         )
+
+
+def test_decode_response_reports_safe_completion_diagnostics():
+    """Expose bounded metadata without putting provider content in errors."""
+    with pytest.raises(RequestFailure, match="4096 output tokens"):
+        decode_response(
+            {
+                "choices": [
+                    {"finish_reason": "length", "message": {"content": "secret"}}
+                ],
+                "usage": {"completion_tokens": 4096},
+            }
+        )
+    with pytest.raises(RequestFailure, match="malformed JSON") as error:
+        decode_response(
+            {"choices": [{"finish_reason": "stop", "message": {"content": "secret"}}]}
+        )
+    assert "secret" not in str(error.value)
+
+
+def test_tls_certificate_failure_has_actionable_nonretryable_error(monkeypatch):
+    """Missing Python CA certificates should not trigger repeated paid requests."""
+
+    def fail(*args, **kwargs):
+        """Reproduce urllib's wrapped certificate verification failure."""
+        raise URLError(ssl.SSLCertVerificationError("unable to get local issuer"))
+
+    monkeypatch.setattr("blitzline.integrations.llm.urlopen", fail)
+    with pytest.raises(RequestFailure, match="TLS certificate") as error:
+        post_json("https://example.invalid", {}, {}, 1)
+    assert not error.value.retryable
 
 
 def test_item_specific_repair(settings, tmp_path, cues):

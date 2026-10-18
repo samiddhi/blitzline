@@ -10,6 +10,7 @@ Exit statuses: 0 success/intentional stop, 1 failed stage, 2 invalid input,
 3 awaiting review. Commands never prompt during processing.
 """
 
+import json
 import os
 import shutil
 from contextlib import contextmanager
@@ -19,11 +20,12 @@ from pathlib import Path
 import click
 
 from blitzline import __version__
+from blitzline.cleanup import clean_run, cleanup_plan
 from blitzline.config import get_config, llm_profile, resolve_language
 from blitzline.core import STAGES, export_run, resume_pipeline, run_pipeline
 from blitzline.integrations.blitzer import preflight
 from blitzline.records import NeedsReview, PipelineError
-from blitzline.storage import read_json
+from blitzline.storage import RunStore, read_json, run_lock
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
@@ -134,6 +136,60 @@ def show_result(directory: Path) -> None:
 @click.version_option(__version__)
 def cli():
     """Turn a foreign-language recording into subtitles and Anki vocabulary."""
+
+
+@cli.command("capabilities")
+def capabilities():
+    """Report stable machine-contract versions without processing media or calling providers."""
+    click.echo(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tool": "blitzline",
+                "version": __version__,
+                "stage_failure_status": "partial",
+                "transport_error_metadata": 1,
+                "resume_partial_stages": True,
+                "retry_stage": 1,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+@cli.command("retry-stage")
+@click.argument(
+    "run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
+@click.option("--stage", required=True)
+def retry_stage(run_dir, stage):
+    """Mark a failed stage for retry without dispatching paid work; then use resume."""
+    with errors(), run_lock(run_dir):
+        store = RunStore(run_dir, {})
+        result = store.invalidate(stage)
+        click.echo(json.dumps(result, sort_keys=True))
+
+
+@cli.command()
+@click.argument(
+    "run_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Remove intermediates after checking the exported deck.",
+)
+def clean(run_dir, apply):
+    """Preview cleanup of a completed APKG/TSV run; --apply removes intermediates."""
+    with errors():
+        plan = clean_run(run_dir) if apply else cleanup_plan(run_dir)
+        click.echo(
+            f"{'Removed' if apply else 'Would remove'} {plan['files']} files "
+            f"({plan['bytes']:,} bytes) from {', '.join(plan['remove']) or 'nothing'}."
+        )
+        click.echo("Keeping exports: " + ", ".join(plan["keep"]))
+        if not apply:
+            click.echo("After checking the deck, rerun with --apply to clean this run.")
 
 
 @cli.command()
@@ -308,7 +364,12 @@ def check_command(config, language):
         click.echo(
             f"APKG writer: {'available' if find_spec('genanki') else 'install blitzline[apkg]'}"
         )
-        for stage in ("proofread", "translate", "review"):
+        stages = ["proofread", "translate", "review"]
+        if settings["llm"]["ambiguity_review"]:
+            stages.append("ambiguity_review")
+        if settings["llm"]["audit_review"]:
+            stages.append("audit_review")
+        for stage in stages:
             profile = llm_profile(settings, stage)
             if not profile:
                 click.echo(f"{stage}: no LLM profile")

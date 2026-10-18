@@ -40,6 +40,28 @@ def test_asr_command(settings, tmp_path):
         asr_language("pli", settings["asr"])
 
 
+def test_serbian_asr_uses_segment_timing_without_missing_alignment_model(
+    settings, tmp_path
+):
+    """Keep Serbian transcription usable when WhisperX has no default aligner for sr."""
+    calls = []
+
+    def runner(args, **kwargs):
+        """Capture the supported CLI flags and write segment-only ASR output."""
+        calls.append(args)
+        output = Path(args[args.index("--output_dir") + 1])
+        write_json(
+            output / "source.json",
+            {"segments": [{"start": 0, "end": 1, "text": "Здраво"}]},
+        )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    result = transcribe(tmp_path / "source.mp4", "srp", settings["asr"], runner)
+    assert result["segments"][0]["text"] == "Здраво"
+    assert calls[0][calls[0].index("--language") + 1] == "sr"
+    assert "--no_align" in calls[0]
+
+
 def test_blitzer_invariants(settings, tmp_path):
     """Always request required extraction options and explicitly disable user-data writes."""
     args = arguments("slv", tmp_path / "text.txt", settings["blitzer"])

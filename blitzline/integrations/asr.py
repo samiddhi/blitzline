@@ -96,6 +96,7 @@ def transcribe(
             if media_settings is not None:
                 data["blitzline_audio_offset_ms"] = info.get("audio_offset_ms", 0)
             return data
+        selected_language = asr_language(language, settings)
         args = [
             settings["executable"],
             str(selected_source),
@@ -106,12 +107,16 @@ def transcribe(
             "--compute_type",
             settings["compute_type"],
             "--language",
-            asr_language(language, settings),
+            selected_language,
             "--output_format",
             "json",
             "--output_dir",
             directory,
         ]
+        # WhisperX currently has no default Serbian alignment model. Segment
+        # timing remains usable to the downstream cue normalizer without it.
+        if selected_language == "sr":
+            args.append("--no_align")
         run_process(args, settings["timeout"], runner)
         path = Path(directory) / (selected_source.stem + ".json")
         if not path.is_file():

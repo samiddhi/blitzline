@@ -7,5 +7,6 @@ __pycache__/
 build/
 dist/
 maintenance/work/
+maintenance/archive/
 .runs/
 .DS_Store

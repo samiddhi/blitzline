@@ -13,7 +13,7 @@ import math
 from dataclasses import asdict, dataclass
 
 SCHEMA_VERSION = 1
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 
 class PipelineError(Exception):

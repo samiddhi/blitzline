@@ -66,7 +66,11 @@ default = "router"
 # proofread = "router"
 # translate = "direct-deepseek"
 # review = "router"
+# ambiguity_review = "router_thinking" # Optional: recheck forms shared by competing lemmas.
+# audit_review = "router_thinking" # Optional: one correction-only audit of all candidates.
+# form_lexicon = "/path/to/bltzr/languages/slv/lemmas.db" # Optional read-only form/lemma SQLite table.
 batch_size = 20
+# ambiguity_batch_size = 5
 max_chars = 24000
 repair_attempts = 2
 
@@ -75,6 +79,9 @@ provider = "openrouter"
 model = "deepseek/deepseek-chat" # Example ID; select an available model in your account.
 api_key_env = "OPENROUTER_API_KEY"
 response_format = "json_object" # json_schema for supported models; text omits enforcement.
+# reasoning_enabled = false # OpenRouter only; useful for short structured tasks.
+# openrouter_provider = "deepseek" # Optional: pin one provider with no fallback.
+# openrouter_max_price = { prompt = 0.15, completion = 0.60 } # Optional $/million token ceilings.
 max_tokens = 4096
 timeout = 120
 retries = 2

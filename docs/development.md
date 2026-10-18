@@ -18,6 +18,10 @@ neither imported nor considered maintained production code.
 
 Selection: `--config` → `BLITZLINE_CONFIG` → platform user config directory's
 `config.toml`. `XDG_CONFIG_HOME/blitzline/config.toml` is used when set.
+An absolute `XDG_DATA_HOME` selects `XDG_DATA_HOME/blitzline/runs` for new
+default runs, including on macOS. Without XDG overrides, platformdirs uses the
+native per-user paths. Relative XDG roots are ignored per the base-directory
+specification.
 Missing default config uses fresh defaults; a missing explicitly selected file
 is an error. Precedence is CLI choices → selected TOML → defaults. Paths inside
 TOML resolve relative to that file. Resume uses the saved effective settings
@@ -32,11 +36,29 @@ Use an already provisioned ASR environment for offline operation.
 ### Providers
 
 Choose `llm.default` or a named profile separately for `llm.proofread`,
-`llm.translate`, and `llm.review`. No default profile means manual review.
+`llm.translate`, and `llm.review`. Optional `llm.ambiguity_review` selects a
+second profile that rechecks candidates whose highlighted surface form occurs
+under more than one lemma, including rejected first-pass candidates. Its batch
+size is `llm.ambiguity_batch_size` (default 5). This is a candidate-based
+heuristic, not a complete morphological analysis; a form with no competing
+candidate may still be ambiguous. No default profile means manual review.
 Proofread/translate are off by default; explicitly enabling either requires
 its profile. Profiles contain provider, model, key environment-variable name,
 optional base URL, response mode, temperature, max_tokens, timeout, and retries.
 Literal key fields and credentials in URLs are rejected.
+OpenRouter profiles may set `reasoning_enabled = true` or `false`; use a
+non-thinking review profile and a thinking ambiguity profile for a two-pass
+vocabulary review.
+Optional `llm.audit_review` uses one additional request to inspect every
+candidate after the first pass and return only changed decisions. Corrections
+are validated against the original candidates and saved in
+`artifacts/05-audit-corrections.json`; an incomplete or malformed audit fails
+the stage rather than becoming manual review. A large output-token ceiling
+allows extended reasoning but still sets a finite spend and length bound.
+An OpenRouter profile can set `openrouter_provider` to restrict routing to one
+provider without fallback, or `openrouter_max_price` with `prompt` and
+`completion` dollar-per-million-token limits to allow any provider within those
+prices.
 
 - `openrouter`: `https://openrouter.ai/api/v1`, `OPENROUTER_API_KEY`. It sends
   the app title and requires provider support for requested JSON parameters.
@@ -54,9 +76,14 @@ stage. Requests use a finite timeout, size bound, and transient retry count.
 Schema repair is limited by `llm.repair_attempts`; accepted items are retained
 while missing/invalid items are re-requested with competing candidate evidence.
 
-Related lemma candidates remain in the same batch. An exceptionally large
-related group raises an actionable limit error rather than splitting competing
-lemmas. `llm.max_chars` bounds serialized batch data, not tokenizer counts;
+Candidates with the same normalized highlighted form remain in the same review
+batch even when that form occurs in different sentences; links through multiple
+forms are grouped transitively. Set `llm.form_lexicon` to a Blitzer language
+pack's `lemmas.db` to also group lemmas that share dictionary forms absent from
+the supplied examples. The SQLite table is read only and fingerprinted for
+resume; lemmas missing from it still use their observed forms. A group exceeding
+`llm.batch_size` or `llm.max_chars` raises an actionable limit error rather than
+splitting the group. `llm.max_chars` bounds serialized batch data, not tokenizer counts;
 choose limits below the selected model's context window. `max_tokens` separately
 bounds generated output. Neighbouring cues accompany translation/proofreading.
 No audio-capable API is presumed: `asr.relisten=true` makes a second ASR pass on

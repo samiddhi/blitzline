@@ -15,6 +15,7 @@ import pytest
 from conftest import approve_request, configure_llm
 
 from blitzline.core import export_run, resume_pipeline, run_pipeline
+from blitzline.integrations.llm import RequestFailure
 from blitzline.records import NeedsReview, PipelineError
 from blitzline.storage import read_json, write_json
 from blitzline.transcript import parse_srt
@@ -105,6 +106,36 @@ def test_manual_review_resume(tmp_path, recording, settings):
         not card["contexts"][1:]
         for card in read_json(output / "artifacts/06-media.json")["cards"]
     )
+
+
+def test_provider_connection_failure_can_resume_without_manual_review(
+    tmp_path, recording, settings
+):
+    """An API outage fails review and a later resume uses the same candidates."""
+    require_blitzer()
+    configure_llm(settings)
+    output = tmp_path / "run"
+
+    def offline(*args):
+        """Simulate an unavailable provider during vocabulary review."""
+        raise RequestFailure("API TLS certificate verification failed")
+
+    with pytest.raises(RequestFailure, match="TLS certificate"):
+        run_pipeline(
+            recording,
+            "eng",
+            settings,
+            directory=output,
+            asr_json=transcript_file(tmp_path),
+            requester=offline,
+        )
+    manifest = read_json(output / "manifest.json")
+    assert manifest["state"] == "failed"
+    assert manifest["stages"]["05-review"]["state"] == "failed"
+    assert not (output / "artifacts/review.json").exists()
+
+    resume_pipeline(output, requester=approve_request)
+    assert read_json(output / "manifest.json")["state"] == "complete"
 
 
 def test_video_and_export_checksum(tmp_path, recording, settings):

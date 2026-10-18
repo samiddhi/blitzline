@@ -8,7 +8,6 @@ provider requests (integrations/), and export formatting (exports/).
 Start here: RunStore.stage runs or reuses one explicitly named stage.
 """
 
-import fcntl
 import hashlib
 import json
 import os
@@ -16,6 +15,11 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 from blitzline import __version__
 from blitzline.records import SCHEMA_VERSION, PipelineError
@@ -84,13 +88,21 @@ def run_lock(directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / ".lock").open("a+") as stream:
         try:
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
+            if os.name == "nt":
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
             raise PipelineError(f"Another process is using run {directory}") from error
         try:
             yield
         finally:
-            fcntl.flock(stream, fcntl.LOCK_UN)
+            if os.name == "nt":
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream, fcntl.LOCK_UN)
 
 
 class RunStore:
@@ -112,6 +124,8 @@ class RunStore:
         )
         if self.manifest.get("schema_version") != SCHEMA_VERSION:
             raise PipelineError("Unsupported run schema version")
+        if self.manifest.get("state") == "cleaned":
+            raise PipelineError("This run was cleaned and can no longer be resumed")
         self.manifest.update(metadata)
         for name in ("artifacts", "media", "exports", "logs"):
             (directory / name).mkdir(parents=True, exist_ok=True)
@@ -169,7 +183,9 @@ class RunStore:
             paths = [path, *extra_paths]
             hashes = {str(p.relative_to(self.directory)): fingerprint(p) for p in paths}
             state = (
-                "skipped"
+                "partial"
+                if isinstance(value, dict) and value.get("errors")
+                else "skipped"
                 if isinstance(value, dict) and value.get("skipped")
                 else "complete"
             )
@@ -182,6 +198,31 @@ class RunStore:
             self.save()
             self.event(name, "failed")
             raise
+
+    def invalidate(self, name: str) -> dict:
+        """Mark a failed/partial/interrupted stage and descendants for explicit retry.
+
+        The caller holds run_lock. Artifacts and valid earlier stages are retained;
+        invalidation never dispatches a provider or deletes a learner's review.
+        Successful stages require a separate intentional reprocessing request.
+        """
+        previous = self.manifest["stages"].get(name)
+        if not previous or previous.get("state") not in {
+            "failed",
+            "partial",
+            "running",
+            "retry-requested",
+        }:
+            raise PipelineError(
+                "Select a failed, partial, or interrupted stage to retry"
+            )
+        affected = sorted(stage for stage in self.manifest["stages"] if stage >= name)
+        for stage in affected:
+            self.manifest["stages"][stage]["state"] = "retry-requested"
+        self.save()
+        for stage in affected:
+            self.event(stage, "retry-requested")
+        return {"schema_version": 1, "stage": name, "invalidated": affected}
 
     def needs_review(self, message: str) -> None:
         """Mark a run awaiting review without invalidating its completed stages."""

@@ -65,7 +65,7 @@ def test_cli_help_and_invalid_options():
     """Expose the four small commands and report invalid choices as usage errors."""
     runner = CliRunner()
     assert runner.invoke(cli, ["--help"]).exit_code == 0
-    for name in ("run", "resume", "export", "check"):
+    for name in ("run", "resume", "export", "check", "clean"):
         assert runner.invoke(cli, [name, "--help"]).exit_code == 0
     assert runner.invoke(cli, ["run", "--clips", "invalid"]).exit_code == 2
 

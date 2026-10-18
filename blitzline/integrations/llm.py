@@ -11,6 +11,7 @@ be tested without a key. OpenRouter uses its /api/v1/chat/completions endpoint.
 
 import json
 import os
+import ssl
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -46,11 +47,21 @@ def post_json(url: str, payload: dict, headers: dict, timeout: int) -> dict:
             raise RequestFailure("API response exceeds the size limit")
         return json.loads(raw)
     except HTTPError as error:
+        if error.code == 404:
+            raise RequestFailure(
+                "API returned HTTP 404; no endpoint may match the model, provider, and token limits"
+            ) from None
         raise RequestFailure(
             f"API returned HTTP {error.code}",
             error.code in {408, 429} or error.code >= 500,
         ) from None
-    except (URLError, TimeoutError, OSError) as error:
+    except URLError as error:
+        if isinstance(error.reason, ssl.SSLCertVerificationError):
+            raise RequestFailure(
+                "API TLS certificate verification failed; configure Python CA certificates"
+            ) from None
+        raise RequestFailure("API connection failed (URLError)", True) from None
+    except (TimeoutError, OSError) as error:
         raise RequestFailure(
             f"API connection failed ({type(error).__name__})", True
         ) from None
@@ -91,6 +102,16 @@ def request_payload(profile: dict, instruction: str, data, schema: dict) -> dict
         }
     if profile["provider"] == "openrouter" and mode != "text":
         payload["provider"] = {"require_parameters": True}
+    if profile["provider"] == "openrouter" and profile.get("openrouter_provider"):
+        payload.setdefault("provider", {}).update(
+            only=[profile["openrouter_provider"]], allow_fallbacks=False
+        )
+    if profile["provider"] == "openrouter" and profile.get("openrouter_max_price"):
+        payload.setdefault("provider", {})["max_price"] = profile[
+            "openrouter_max_price"
+        ]
+    if profile["provider"] == "openrouter" and "reasoning_enabled" in profile:
+        payload["reasoning"] = {"enabled": profile["reasoning_enabled"]}
     return payload
 
 
@@ -98,19 +119,34 @@ def decode_response(response: dict) -> dict:
     """Require a completed assistant JSON object, rejecting truncation/refusal."""
     try:
         choice = response["choices"][0]
-        if choice.get("finish_reason") != "stop" or choice.get("error"):
-            raise ValueError("Incomplete response")
+    except (KeyError, IndexError, TypeError):
+        raise RequestFailure("Model response has no completion choice") from None
+    if choice.get("error"):
+        raise RequestFailure("Model provider reported a completion error")
+    finish_reason = choice.get("finish_reason")
+    if finish_reason != "stop":
+        reason = (
+            finish_reason
+            if finish_reason in {"length", "content_filter", "tool_calls"}
+            else "unknown"
+        )
+        usage = response.get("usage") or {}
+        count = usage.get("completion_tokens")
+        detail = f" after {count} output tokens" if type(count) is int else ""
+        raise RequestFailure(f"Model stopped with finish_reason={reason}{detail}")
+    try:
         content = choice["message"]["content"]
-        if not isinstance(content, str):
-            raise ValueError("Missing assistant text")
+    except (KeyError, TypeError):
+        raise RequestFailure("Model returned no assistant text") from None
+    if not isinstance(content, str) or not content.strip():
+        raise RequestFailure("Model returned empty assistant text")
+    try:
         value = json.loads(content)
-        if not isinstance(value, dict):
-            raise ValueError("Not a JSON object")
-        return value
-    except (KeyError, IndexError, TypeError, ValueError):
-        raise RequestFailure(
-            "Model response is incomplete or not a JSON object"
-        ) from None
+    except (TypeError, ValueError):
+        raise RequestFailure("Model returned malformed JSON") from None
+    if not isinstance(value, dict):
+        raise RequestFailure("Model returned JSON other than an object")
+    return value
 
 
 def request_json(

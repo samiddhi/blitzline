@@ -16,8 +16,6 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from platformdirs import user_config_dir, user_data_dir
-
 from blitzline.config import resolve_path
 from blitzline.media import run_process
 from blitzline.records import PipelineError
@@ -88,10 +86,9 @@ def selected_config(settings: dict) -> Path | None:
     if explicit:
         return Path(resolve_path(explicit, Path.cwd()))
     root = os.environ.get("XDG_CONFIG_HOME")
-    native = Path(root) / "bltzr" if root else Path(user_config_dir("bltzr"))
-    home = Path.home() / ".config" / "bltzr" / "bltzr.toml"
-    paths = [native / "bltzr.toml", home] if root else [home, native / "bltzr.toml"]
-    return next((p for p in paths if p.is_file()), None)
+    home = Path(root) if root and Path(root).is_absolute() else Path.home() / ".config"
+    path = home / "bltzr" / "bltzr.toml"
+    return path if path.exists() else None
 
 
 def filtering_paths(options: dict, settings: dict, base: Path) -> list[Path]:
@@ -117,9 +114,14 @@ def dependencies(language: str, settings: dict, runner=subprocess.run) -> dict:
     raw = tomllib.loads(path.read_text()) if path and path.is_file() else {}
     base = path.parent if path else Path.cwd()
     data_root = os.environ.get("XDG_DATA_HOME")
-    data = Path(data_root) / "bltzr" if data_root else Path(user_data_dir("bltzr"))
+    data = (
+        Path(data_root)
+        if data_root and Path(data_root).is_absolute()
+        else Path.home() / ".local/share"
+    ) / "bltzr"
     pack = (
         settings["plugins_dir"]
+        or raw.get("locations", {}).get("language_packs_dir")
         or raw.get("locations", {}).get("plugins_dir")
         or str(data / "languages")
     )

@@ -1,0 +1,421 @@
+.TH BLITZLINE 1 "2026-10-18" "Blitzline" "User Commands"
+.SH NAME
+blitzline \- turn a foreign-language recording into an Anki vocabulary deck
+.SH SYNOPSIS
+.B blitzline check
+.RB [ -l " " CODE ]
+.RB [ --config " " FILE ]
+.br
+.B blitzline run
+.I MEDIA
+.RB [ -l " " CODE | --deck-profile " " NAME ]
+.RI [ OPTIONS ]
+.br
+.B blitzline resume
+.I RUN_DIR
+.RI [ OPTIONS ]
+.br
+.B blitzline export
+.I RUN_DIR
+.B --format
+.RI { apkg | tsv | anki }
+.RI [ OPTIONS ]
+.br
+.B blitzline clean
+.I RUN_DIR
+.RB [ --apply ]
+.br
+.B blitzline retry-stage
+.I RUN_DIR
+.B --stage
+.I STAGE
+.br
+.B blitzline capabilities
+.SH DESCRIPTION
+Blitzline takes an audio or video recording, finds vocabulary in its
+source-language transcript, chooses example sentences, cuts matching audio or
+video clips, and prepares Anki cards. A run is the folder holding that work.
+The folder also lets you continue after a stop. When inputs have not changed,
+Blitzline reuses completed stages and successful model responses.
+.PP
+If you already have subtitles, give Blitzline the recording and its timed SRT
+file
+with
+.BR --srt .
+This skips transcription; WhisperX is only needed if you separately enable
+audio re-listening. Without subtitles or timed ASR JSON, configure a
+transcription backend first. Proofreading and translation are optional and off
+by default; you can make a source-language deck without translating the
+subtitles.
+.SS Get ready
+Install Blitzline with its APKG extra if you want a deck file that Anki can
+import:
+.PP
+.nf
+python3 -m pip install 'blitzline[apkg]'
+.fi
+.PP
+Install FFmpeg, Blitzer
+.RB ( bltzr ),
+and a Blitzer language pack separately. A language code such as
+.B slv
+selects the pack; a deck profile selects that language and the Anki deck
+together.
+.PP
+Create a TOML configuration file. This small example uses OpenRouter to review
+Slovenian vocabulary and writes an APKG. Replace the model identifier with one
+available to your account. Set
+.B OPENROUTER_API_KEY
+in your shell environment; the key itself does not belong in this file.
+.PP
+.nf
+[llm]
+review = "router"
+
+[profiles.router]
+provider = "openrouter"
+model = "YOUR_MODEL_ID"
+api_key_env = "OPENROUTER_API_KEY"
+response_format = "json_object"
+
+[export]
+format = "apkg"
+
+[decks.slovenian]
+language = "slv"
+deck = "Blitzline::Slovenian"
+card_types = ["Sentence1", "Sentence2"]
+.fi
+.PP
+Save it as
+.B config.toml
+for the commands below. Once it works, you can put it in your user config
+directory and omit
+.BR --config .
+Use
+.B blitzline check
+to see which tools, deck profiles, and API-key environment variables Blitzline
+can find. This check does not send a model request or test whether the key is
+accepted by the provider.
+.PP
+.nf
+blitzline check --config config.toml --language slv
+.fi
+.SS Make the deck
+Suppose
+.B recording.m4a
+and
+.B recording.sl.srt
+contain the same recording in Slovenian. Run:
+.PP
+.nf
+blitzline run recording.m4a --srt recording.sl.srt \\
+  --config config.toml --deck-profile slovenian
+.fi
+.PP
+Blitzline prints the run folder. When it finishes, look under that folder's
+.B exports/apkg/
+directory for
+.BR cards.apkg .
+In Anki, choose File, then Import, and select that APKG. If you prefer to stop
+and inspect the vocabulary decisions before making clips, add
+.B --stop-after review
+to the run command, then continue with
+.BR "blitzline resume RUN_DIR" .
+An intentional stop may print
+.B cards: 0
+because cards are counted at export; it does not mean the review failed.
+.SS What happens along the way
+Progress lines follow the order of work: source checks, transcript import or
+transcription, optional proofreading and translation, Blitzer vocabulary
+extraction, model or manual vocabulary review, clip cutting, and export. The
+run folder keeps reports for these stages. A progress line beginning with
+.B Reusing
+means Blitzline checked the saved result and did not perform that stage again.
+.SS If the run needs attention
+The run folder contains
+.BR artifacts/05-review-report.json ,
+which records vocabulary decisions and errors. If Blitzline asks for manual
+review, compare that report with
+.BR artifacts/04-vocabulary.json ,
+edit
+.BR artifacts/review.json ,
+and pass the edited file explicitly:
+.PP
+.nf
+blitzline resume RUN_DIR --review RUN_DIR/artifacts/review.json
+.fi
+.PP
+If you did not configure an LLM for review, this editable-review path is the
+normal route. If a command failed because of a transient problem, running
+.B resume
+again reuses valid earlier work. The word
+.B Reusing
+in progress output means that stage was recovered from the run folder.
+.SS After checking the imported deck
+You can preview removal of intermediate JSON, working clips, logs, and request
+caches. The APKG stays in the run folder. Nothing is removed automatically when
+export succeeds.
+.PP
+.nf
+blitzline clean RUN_DIR
+blitzline clean RUN_DIR --apply
+.fi
+.PP
+The first command only lists the planned cleanup. Use the second only after
+you have checked the imported deck: a cleaned run cannot be resumed or
+re-exported. Cleanup requires a completed, verified APKG or TSV export.
+.SH COMMANDS
+.TP
+.BI "check " "[--language CODE] [--config FILE]"
+Show configured tools, deck profiles, model profiles, and which key environment
+variables are set. With a language code, also check that Blitzer can use that
+language pack. No transcription or model request is made.
+.TP
+.BI "run " "MEDIA [OPTIONS]"
+Start or reuse a run for the recording at
+.IR MEDIA .
+Supply a language with
+.B --language
+or choose a configured
+.BR --deck-profile .
+Use
+.B --srt
+or
+.B --asr-json
+when a transcript already exists.
+.TP
+.BI "resume " "RUN_DIR [OPTIONS]"
+Continue a saved run. The directory is the one printed by
+.BR run .
+Saved settings are reused unless you explicitly pass
+.B --config
+or other override options.
+.TP
+.BI "export " "RUN_DIR --format {apkg|tsv|anki} [OPTIONS]"
+Deliver validated cards from a completed media stage in another format.
+.B apkg
+creates an importable package;
+.B tsv
+creates tabular files and media;
+.B anki
+sends notes to a running Anki through AnkiConnect.
+.TP
+.BI "clean " "RUN_DIR [--apply]"
+Preview cleanup of a completed portable export. With
+.BR --apply ,
+remove run intermediates and leave the verified export plus a small receipt.
+Direct Anki delivery alone is not a portable export and cannot be cleaned this
+way.
+.TP
+.BI "retry-stage " "RUN_DIR --stage STAGE"
+Mark a failed, partial, or interrupted stage and its later stages for retry.
+This command itself makes no model request; use
+.B resume
+afterward. Stage names include their numbers, for example
+.BR 05-review .
+.TP
+.B capabilities
+Print machine-readable JSON describing supported automation contracts.
+.SH OPTIONS
+.SS Choosing inputs and locations
+.TP
+.BI "-l, --language " CODE
+Use the three-letter lowercase Blitzer language code, such as
+.BR slv .
+Accepted by
+.B run
+and
+.BR check .
+For
+.BR run ,
+a selected deck profile can supply the language instead.
+.TP
+.BI "--deck-profile " NAME
+Use a named
+.B [decks.NAME]
+profile from the configuration. It chooses the source language, destination
+deck, and card types. Available on
+.BR run ,
+.BR resume ,
+and
+.BR export .
+.TP
+.BI "--config " FILE
+Read the named TOML file. For
+.BR run ,
+the selection order is this option, then
+.BR BLITZLINE_CONFIG ,
+then the user config file. On
+.B resume
+and
+.BR export ,
+omit this option to reuse settings saved with the run. Relative paths inside
+the TOML file are resolved from its directory.
+.TP
+.BI "--output " DIR
+Put a new run in
+.IR DIR .
+Only
+.B run
+accepts this option. Without it, Blitzline chooses a run folder under the
+user data directory and prints the full path.
+.TP
+.BI "--srt " FILE
+Use an existing source-language SRT subtitle file with the recording. This
+skips transcription. Available on
+.B run
+and
+.BR resume .
+.TP
+.BI "--asr-json " FILE
+Use an existing timed ASR JSON transcript instead of transcribing. Do not
+combine with
+.BR --srt .
+.TP
+.BI "--asr-backend " "{local|modal|http}"
+Choose the transcription backend for this invocation. It is used only when
+transcription or configured re-listening is needed. Local transcription uses
+WhisperX; Modal and HTTP need their own configuration.
+.TP
+.BI "--review " FILE
+Use edited vocabulary decisions from
+.I FILE
+instead of asking the review model. Usually this is an edited copy of
+.BR artifacts/review.json .
+.SS Processing and delivery
+.TP
+.BI "--stop-after " STAGE
+Stop after
+.BR transcript ,
+.BR proofread ,
+.BR translate ,
+.BR vocabulary ,
+.BR review ,
+or
+.BR media .
+The CLI also accepts
+.BR export ,
+the final stage. Use
+.B resume RUN_DIR
+to continue. Available on
+.B run
+and
+.BR resume .
+.TP
+.B --proofread, --no-proofread
+Enable or disable model proofreading of the transcript. It requires a
+configured proofreading profile when enabled. Off by default.
+.TP
+.B --translate, --no-translate
+Enable or disable translation of subtitles into English. It requires a
+configured translation profile when enabled. Off by default. Vocabulary card
+meanings are handled by review and do not require this option.
+.TP
+.BI "--clips " "{audio|video}"
+Choose the media attached to example cards. Video clips require a source with
+video; the default is audio.
+.TP
+.BI "--format " "{apkg|tsv|anki}"
+Choose the delivery format. On
+.BR export ,
+this option is required. On
+.B run
+or
+.BR resume ,
+it overrides the configured format. An APKG requires the optional
+.B blitzline[apkg]
+dependency; direct
+.B anki
+delivery requires AnkiConnect.
+.TP
+.B --allow-partial, --no-allow-partial
+Allow or refuse delivery of accepted cards when some candidates or clips still
+need attention. Refusing partial delivery is the default; the run keeps a
+report of omitted items.
+.SS Maintenance and general flags
+.TP
+.B --apply
+With
+.BR clean ,
+perform the previewed removal of intermediates. Without it,
+.B clean
+changes nothing.
+.TP
+.BI "--stage " STAGE
+With
+.BR retry-stage ,
+name the failed, partial, or interrupted stage to retry, such as
+.BR 05-review .
+.TP
+.B -h, --help
+Show short CLI help. Run it after a command, for example
+.BR "blitzline run --help" ,
+to see that command's flags.
+.TP
+.B --version
+Show the installed Blitzline version.
+.SH FILES AND ENVIRONMENT
+.TP
+.B User configuration
+With an absolute
+.BR XDG_CONFIG_HOME ,
+Blitzline looks for
+.BR $XDG_CONFIG_HOME/blitzline/config.toml .
+Otherwise it uses the platform's user config directory. An explicit
+.B --config
+or
+.B BLITZLINE_CONFIG
+takes precedence.
+.TP
+.B Default run location
+With an absolute
+.BR XDG_DATA_HOME ,
+new runs go under
+.BR $XDG_DATA_HOME/blitzline/runs .
+Otherwise Blitzline uses the platform's user data directory. An explicit
+.B --output
+takes precedence.
+.TP
+.B Run contents
+.B artifacts/
+holds stage results and reports;
+.B media/
+holds working example clips;
+.B exports/
+holds deliverables;
+.B logs/
+holds progress events;
+.B .cache/
+holds reusable responses;
+.B manifest.json
+records the run state. Keep these together until you are satisfied with the
+export.
+.TP
+.B API keys
+Provider profiles name an environment variable with
+.BR api_key_env .
+For the OpenRouter example above, set
+.B OPENROUTER_API_KEY
+before running review. Blitzline reports whether it is set but does not print
+the key.
+.SH EXIT STATUS
+.TP
+.B 0
+Command succeeded, including an intentional
+.B --stop-after
+or a cleanup preview.
+.TP
+.B 1
+A stage, prerequisite, or external service failed.
+.TP
+.B 2
+Invalid command usage or configuration.
+.TP
+.B 3
+The run needs review before delivery can continue.
+.SH SEE ALSO
+.BR bltzr (1),
+.BR ffmpeg (1)
+.PP
+Project setup and configuration examples are in the Blitzline documentation.

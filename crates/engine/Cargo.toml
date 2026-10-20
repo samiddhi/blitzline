@@ -1,0 +1,9 @@
+[package]
+name = "blitzline-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+blitzline-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "blitzline-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "blitzline"
+path = "src/main.rs"
+
+[dependencies]
+blitzline-domain.workspace = true
+blitzline-engine.workspace = true
+blitzline-adapters.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }

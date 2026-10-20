@@ -1,0 +1,5 @@
+/target/
+/.prototype/
+*.log
+.DS_Store
+

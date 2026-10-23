@@ -64,3 +64,50 @@ fn unsupported_documents_get_actionable_error() {
             .contains("Paste text")
     );
 }
+
+#[test]
+fn supported_audio_extensions_do_not_fall_through_to_text_import() {
+    let dir = tempfile::tempdir().unwrap();
+    for extension in [
+        "opus", "aiff", "aif", "m4b", "wma", "oga", "caf", "mp3", "wav",
+    ] {
+        let path = dir.path().join(format!("recording.{extension}"));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(3 * 1024 * 1024).unwrap();
+        let source = load_source(&path).unwrap();
+        assert!(source.media, "{extension}");
+        assert!(source.text.is_empty());
+    }
+}
+#[cfg(unix)]
+#[test]
+fn multi_gigabyte_recordings_have_no_import_size_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("long-recording.opus");
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(6 * 1024 * 1024 * 1024).unwrap();
+    assert!(load_source(&path).unwrap().media);
+}
+#[test]
+fn recording_headers_are_recognized_without_a_known_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, bytes) in [
+        ("recording.bin", b"OggS".as_slice()),
+        ("track", b"RIFF\0\0\0\0WAVE".as_slice()),
+        ("download.dat", b"\0\0\0\x18ftypisom".as_slice()),
+    ] {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        assert!(load_source(&path).unwrap().media, "{name}");
+    }
+}
+#[test]
+fn text_import_accepts_more_than_two_megabytes_without_caching_the_document() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("book.txt");
+    std::fs::write(&path, "word ".repeat(600_000)).unwrap();
+    let source = load_source(&path).unwrap();
+    assert!(!source.media);
+    assert!(source.text.is_empty());
+    assert!(source.path.is_some());
+}

@@ -1,109 +1,143 @@
-# Blitzline — Rust desktop prototype
+# Blitzline
 
-A working GUI skeleton for turning recordings and text into study cards.
-The shared Rust engine is currently a **deterministic simulation**, so the
-interface can be evaluated before connecting the real pipeline.
+A Rust pipeline and native desktop application for turning text and recordings
+into reviewed language-learning cards. The installed binaries need **no Python
+or other language runtime**.
 
-Read the [full GUI specification](planning/gui.md),
-[architecture](planning/architecture.md), and
-[implementation/acceptance status](planning/gui-acceptance.md).
+The desktop retains its native macOS toolbar, light/dark appearance, guided
+setup, and separate chat assistant. Normal projects use the real pipeline;
+**Try an example** uses explicitly marked demonstration data.
 
-The macOS build has a real AppKit toolbar and menus, a light/dark toolbar
-switch, and system typography. Content uses the shared Rust/egui renderer.
-See the [macOS design revision](planning/macos-design.md) for the native boundary.
+## Application distribution
 
-## Try it
+End users should receive a prebuilt macOS application, Windows installer, or
+Linux desktop package. They should not build from source, install Rust/Python,
+or open a terminal. Current local app bundles and CI artifacts are development
+builds; public installers and signed releases are still in progress.
 
-Build a double-clickable macOS application:
+Normal app data lives in the user's OS application-data directory, outside the
+repository and installed app. Source files stay where the user selected them.
+The app stores references; pasted text and generated artifacts live in its run
+folders. `--data-dir` is an explicit development override.
+
+## Developer builds
+
+Build a double-clickable macOS app, including its standalone CLI:
 
 ```sh
 sh distribution/package-macos.sh --debug
 ```
 
-Open `target/Blitzline Prototype.app` in Finder. The built app does not need
-Python, Cargo, or a terminal to run.
+Open `target/Blitzline.app`. In Settings → Import & diagnostics, choose
+**Install command-line tool…** to copy the bundled CLI to your preferred folder.
+It works independently of the app. Omit `--debug` for a release build.
 
-For development on macOS, Windows, or Linux:
+For CLI-only installation, build `cargo build --release --locked -p blitzline-cli
+--bin blitzline` and copy `target/release/blitzline` to your preferred executable
+folder. Unix CLI archives can be built with `sh distribution/package-cli.sh`.
+Windows builds produce `blitzline.exe`. Rust is needed on the build machine only.
+The manual distribution workflow builds unsigned platform artifacts.
 
-```sh
-cargo run --locked -p blitzline-desktop
-```
+Native extraction needs a **compiled Blitzer** distribution that implements the
+existing JSON/argument contract. Its separate port is not included here. Media
+also needs FFmpeg/FFprobe; local speech recognition needs whisper.cpp and a
+preconverted GGML model. Executables can be bundled, installed as managed
+resources, found on PATH, or configured explicitly. Python wrappers are rejected.
 
-Choose **Try an example**, then **Go to current step** when vocabulary is ready.
-Select **Open chat assistant** to open its separate window. Expand
-**Try a sample reply — prototype only**, fill a
-sample reply, and select **Check answer**. Complete the second batch, prepare
-the study cards, preview, and continue to export. An incomplete sample reply
-demonstrates repair without losing accepted answers.
+Until a compiled Blitzer build is available, `--vocabulary-json FILE` imports
+its documented JSON output and exercises the remaining real pipeline. This is
+also useful for reproducible workflows.
 
-You may also copy the prepared prompt to a real browser chat and paste its
-answer back. Opening a website never sends a prompt automatically.
-
-For isolated state:
-
-```sh
-cargo run --locked -p blitzline-desktop -- --data-dir .prototype
-```
-
-`--scenario assistant|cards|export|setup|projects|settings` seeds a demonstration
-view. Use an isolated data directory for testing. `--narrow` starts at 1024×768.
-
-## What works
-
-- Native Rust windows, guided setup, separate projects, and stage navigation.
-- Project/settings/draft persistence with atomic saves and exclusive ownership.
-- Guided copy/paste, validation, partial repair, stale-answer rejection,
-  smaller sample batches, and direct review.
-- Pause/resume, queue progression, simulated failures, and recovery.
-- Card preview/export gating and actual sample TSV output.
-- Searchable settings, profiles, managed word lists, session-only credential
-  entry, and basic Python deck-profile import.
-- A detachable assistant and separate template editor with safe text preview.
-- A CLI using the same application operations:
+## Browser assistance, without an API key
 
 ```sh
-cargo run --locked -p blitzline-cli -- --data-dir .prototype-cli example
-cargo run --locked -p blitzline-cli -- --data-dir .prototype-cli advance
-cargo run --locked -p blitzline-cli -- --data-dir .prototype-cli list
+blitzline run article.txt --text-only --language slv --method browser --output my-run
+blitzline prompt my-run
+blitzline submit my-run --file reply.json
+blitzline resume my-run
+blitzline export my-run --format apkg
 ```
 
-GUI and CLI cannot write the same prototype workspace simultaneously.
+Copy the whole prompt into a browser chat, then save/paste the whole JSON reply.
+Exit code **3** means the run is waiting for review. Submission saves validated
+answers without dispatching the next request. Resume continues. Partial answers
+retain valid items; follow-up prompts request the remainder. Old exchange IDs or
+revisions cannot overwrite newer work.
 
-## Simulation boundaries
+The GUI provides the same copy/paste exchange in its chat assistant. You can
+also type meanings and include/exclude words directly. Preview the current
+cards before exporting. Exported files live in the project's run folder;
+**Show exported files** opens that folder in your system file manager.
 
-Transcription, Blitzer extraction, paid AI requests, audio/video playback, model
-downloads, APKG generation, and Anki delivery are **not connected**.
-The UI labels those operations. Vocabulary is bundled demonstration data;
-the app never claims it analyzed a user's file or delivered a real deck.
+## Automatic processing and recordings
 
-The sample TSV is real but contains demonstration words. APKG export records
-only a simulated receipt. Keys remain in memory and are never sent or saved.
-Production OS credential storage remains pending.
+Select a configuration with `--config FILE`, `BLITZLINE_CONFIG`, or the default
+application config directory. The GUI can select one in **Tools & downloads**.
+A minimal configuration for automatic review:
 
-Template editing saves front/back/CSS and previews substitutions as plain text;
-it never executes HTML/JavaScript. Import applies language/deck profiles and
-reports unsupported settings.
+```toml
+[run]
+method = "api"
 
-Prototype storage is one versioned workspace rather than production job folders.
-It uses the separate `Blitzline Prototype` application data directory and never
-modifies Python Blitzline or Blitzer data.
+[llm]
+default = "reviewer"
 
-## Development
+[profiles.reviewer]
+provider = "openrouter"
+model = "YOUR_MODEL_ID"
+api_key_env = "OPENROUTER_API_KEY"
+```
 
-Rust 1.93.1 was used locally. The prototype uses egui/eframe 0.33.3 with AccessKit.
-This is not a final production toolkit commitment: full assistive-technology and
-playback checks are still required.
+Keys come from environment variables; desktop-entered keys are session-only.
+OpenRouter, DeepSeek, and compatible HTTP profiles support configured response
+modes, routing, reasoning, retries, and request caches. Automatic service use
+requires the user's processing choice and may incur charges.
+
+```sh
+blitzline run recording.mp4 --language slv --method browser --output recording-run
+blitzline run recording.mp4 --language slv --srt corrected.srt --output subtitle-run
+blitzline resume recording-run --review decisions.json
+blitzline export recording-run --format tsv
+blitzline export recording-run --format anki
+blitzline check --text-only
+```
+
+Transcription supports native whisper.cpp, Groq, custom HTTP workers, SRT, and
+ASR JSON. Optional proofreading, translation, second-ASR evidence for uncertain
+corrections, ambiguity review, and correction-only audit share saved tasks and
+validators. Text stays untimed and never requires media tools.
+
+Runs use locked folders, atomic manifests, checksummed artifacts, stable Anki
+identities, bounded requests, explicit partial export, and per-note AnkiConnect
+receipts. Cleanup previews first; `clean RUN --apply` requires verified portable
+exports and makes working data nonresumable. Original source files are retained.
+Existing Python jobs remain with `../blitzline-py`.
+
+## Development and status
+
+Development uses Rust 1.93.1, a committed Cargo.lock, bundled SQLite, and Rust TLS.
 
 ```sh
 cargo fmt --all --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo build --workspace --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-features --locked
 ```
 
-The workspace separates domain values, engine operations, storage/import
-adapters, CLI, and desktop UI. Tests use synthetic data and fake processing.
-No credentials, personal recordings, or paid services are needed.
+HTTP tests use local fake services. Media tests use native FFmpeg/FFprobe when
+available; set `BLITZLINE_REQUIRE_MEDIA_TESTS=1` to require them. No test needs real
+credentials, paid services, or personal recordings. Reference fixture generation
+used the Python development checkout; installed applications and Rust tests do
+not invoke it. The old simulation CLI is separately named `blitzline-demo`.
 
-The Python reference is `../blitzline-py`, including its uncommitted changes.
-Read [compatibility](planning/compatibility.md) before porting real behavior.
+See the [production UI audit](planning/production-ui-audit.md),
+[implementation status](planning/implementation-status.md),
+[architecture](planning/architecture.md), [port plan](planning/rust-port.md),
+[compatibility](planning/compatibility.md), and [full GUI specification](planning/gui.md).
+
+This is an unsigned development build. Fully managed tool/model catalogs,
+signing/notarization, real-Anki import acceptance, Windows/Linux clean-machine
+checks, embedded media playback/HTML preview, and production accessibility
+acceptance remain release gates. The GUI currently opens recordings in the
+system media player and previews card content as plain text. It supports whole
+text-document corrections; correcting media cue timing uses imported subtitles
+in a new project.

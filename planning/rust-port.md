@@ -1,12 +1,18 @@
 # Rust port implementation plan
 
+For current implementation evidence and remaining release gates, see
+[implementation-status.md](implementation-status.md). The desktop prototype is
+the retained product UI. CLI and desktop call the same production engine; the
+old deterministic service is restricted to explicit examples.
+
 ## Scope and technical foundation
 
 Implement the organization in [architecture.md](architecture.md), subject to the
 preservation rules and exceptions in [compatibility.md](compatibility.md).
 
 Use typed Rust records with Serde serialization, TOML configuration, and JSON
-job artifacts. Use Tokio for asynchronous execution and Reqwest for HTTP.
+job artifacts. Use a dedicated blocking worker for each active GUI operation and Reqwest for
+HTTP; Reqwest uses its Tokio transport internally.
 Keep blocking work away from the UI thread. Pin the toolchain and dependency
 versions when creating the workspace and retain the application lockfile.
 

@@ -2,13 +2,41 @@ use super::*;
 use std::path::Path;
 
 impl Desktop {
-    pub(super) fn add_source(&mut self, path: &Path) {
-        match blitzline_adapters::load_source(path) {
-            Ok(source) => {
-                self.engine.state.setup.sources.push(source);
-                self.error.clear();
+    pub(super) fn add_sources(&mut self, paths: &[std::path::PathBuf]) {
+        self.source_import_errors.clear();
+        let mut added = 0;
+        for path in paths {
+            match blitzline_adapters::load_source(path) {
+                Ok(source) => {
+                    self.engine.state.setup.sources.push(source);
+                    added += 1;
+                }
+                Err(error) => {
+                    self.source_import_errors
+                        .push(format!("{}: {}", path.display(), error))
+                }
             }
-            Err(e) => self.error = e.to_string(),
+        }
+        self.error = self.source_import_errors.join("\n");
+        self.notice = format!(
+            "{added} file{} added.{}",
+            if added == 1 { "" } else { "s" },
+            if self.source_import_errors.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " {} could not be added; see the import report.",
+                    self.source_import_errors.len()
+                )
+            }
+        );
+        self.engine.state.setup.step = 0;
+        self.ui.page = Page::Setup;
+    }
+    pub(super) fn save_setup_for_later(&mut self) {
+        if self.save_now() {
+            self.notice = "Project setup saved. Choose Continue saved setup on the Projects page to return to it.".into();
+            self.ui.page = Page::Projects;
         }
     }
     pub(super) fn pick_files(&mut self) {
@@ -16,10 +44,7 @@ impl Desktop {
             .set_title("Choose recordings or text files")
             .pick_files()
         {
-            for path in paths {
-                self.add_source(&path);
-            }
-            self.ui.page = Page::Setup;
+            self.add_sources(&paths);
         }
     }
     pub(super) fn projects(&mut self, ui: &mut egui::Ui) {
@@ -28,6 +53,28 @@ impl Desktop {
             "Your projects",
             "Turn something you enjoy into something you remember.",
         );
+        if !self.engine.state.setup.sources.is_empty()
+            || !self.engine.state.setup.pasted_text.trim().is_empty()
+        {
+            card(ui, |ui| {
+                ui.heading("Saved project setup");
+                let setup = &self.engine.state.setup;
+                let count = setup.sources.len() + usize::from(!setup.pasted_text.trim().is_empty());
+                metadata(
+                    ui,
+                    format!(
+                        "{count} source{} · {} · {}",
+                        if count == 1 { "" } else { "s" },
+                        setup.language,
+                        setup.deck
+                    ),
+                );
+                ui.label("Your material and choices are saved. Processing starts only when you choose Start project.");
+                if primary(ui, "Continue saved setup").clicked() {
+                    self.ui.page = Page::Setup;
+                }
+            });
+        }
         if self.engine.state.projects.is_empty() {
             card(ui, |ui| {
                 ui.heading("A recording. A story. Your next words.");
@@ -164,13 +211,28 @@ impl Desktop {
         ui.add_space(16.0);
         card(ui, |ui| match step {
             0 => {
-                ui.heading("What would you like to learn from?");
+                setup_heading(
+                    ui,
+                    "What would you like to learn from?",
+                    "Choose text, recordings, or both. Each file becomes its own project. You can also paste text. Recordings have no file-size limit; originals stay unchanged.",
+                );
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("Choose files…").clicked() {
                         self.pick_files();
                     }
                     ui.label("or drop recordings and text files here");
                 });
+                if !self.source_import_errors.is_empty() {
+                    ui.strong("Some files could not be added");
+                    for error in &self.source_import_errors {
+                        ui.colored_label(ui.visuals().error_fg_color, error);
+                    }
+                    ui.separator();
+                }
+                metadata(
+                    ui,
+                    "Choose several recordings and text files together. Recordings have no file-size limit.",
+                );
                 let sources = self.engine.state.setup.sources.clone();
                 for (i, source) in sources.iter().enumerate() {
                     ui.horizontal_wrapped(|ui| {
@@ -220,22 +282,31 @@ impl Desktop {
                         });
                     }
                 });
-                ui.small("Several files become separate projects. This prototype previews sample processing, not extraction from your files.");
+                ui.small(
+                    "Several files become separate projects. Your originals are kept unchanged.",
+                );
             }
             1 => {
-                ui.heading("Language and destination");
+                setup_heading(
+                    ui,
+                    "Language and destination",
+                    "Choose the language of your material and the Anki deck where your cards should go. A saved profile is an optional reusable set of language, deck, review preferences, and word lists. Choose No saved profile to configure this project yourself.",
+                );
                 let profiles = self.engine.state.profiles.clone();
                 egui::ComboBox::from_label("Use a saved profile")
                     .selected_text(
                         if self.engine.state.setup.settings.profile_name.is_empty() {
-                            "Choose a profile"
+                            "No saved profile"
                         } else {
                             &self.engine.state.setup.settings.profile_name
                         },
                     )
                     .show_ui(ui, |ui| {
+                        if ui.selectable_label(self.engine.state.setup.settings.profile_name.is_empty(), "No saved profile").on_hover_text("Keep your current language, deck, and options as manual choices. No profile word lists will be applied.").clicked() {
+                            self.engine.state.setup.settings.profile_name.clear();
+                        }
                         for profile in profiles {
-                            if ui.selectable_label(false, &profile.name).clicked() {
+                            if ui.selectable_label(profile.name == self.engine.state.setup.settings.profile_name, &profile.name).clicked() {
                                 let setup = &mut self.engine.state.setup;
                                 setup.language = profile.language;
                                 setup.deck = profile.deck;
@@ -269,13 +340,17 @@ impl Desktop {
                         false,
                         "Online service",
                     );
-                    ui.small("Supplied subtitles bypass transcription. Downloads and online processing are simulated.");
+                    ui.small("Supplied subtitles bypass transcription. Online transcription sends audio to your configured service.");
                 } else {
                     ui.label("Text needs no transcription tools or model download.");
                 }
             }
             2 => {
-                ui.heading("How would you like help?");
+                setup_heading(
+                    ui,
+                    "How would you like help?",
+                    "Use a chat website to copy and paste requests and answers without an API key. Connect an AI service for automatic requests that may incur charges, or review words yourself. Online transcription is a separate choice for recordings.",
+                );
                 for (method, detail) in [
                     (
                         Method::Browser,
@@ -366,7 +441,11 @@ impl Desktop {
                 });
             }
             _ => {
-                ui.heading("Ready when you are");
+                setup_heading(
+                    ui,
+                    "Ready when you are",
+                    "Check the sources, language, destination, and processing choices before starting. Start project begins processing. Save for later keeps your setup without contacting services, and adds a Continue saved setup card to Projects.",
+                );
                 let setup = &self.engine.state.setup;
                 let n = setup.sources.len() + usize::from(!setup.pasted_text.trim().is_empty());
                 metadata(
@@ -399,7 +478,7 @@ impl Desktop {
                     );
                 }
                 ui.label("You will preview the cards before exporting.");
-                ui.label("Prototype: sample vocabulary and simulated services. Your file is not uploaded. No API requests or charges.");
+                ui.label("Browser assistance uses copy and paste. Automatic processing sends content to your configured service and may incur charges. Local transcription requires installed native tools and a model.");
                 if self.engine.state.setup.settings.method == Method::Browser {
                     ui.label("The example has two vocabulary requests. Optional proofreading and translation each add one.");
                 }
@@ -434,15 +513,17 @@ impl Desktop {
                 let setup = self.engine.state.setup.clone();
                 match self.engine.create(&setup) {
                     Ok(ids) => {
+                        self.start_native_projects(&ids);
                         self.engine.state.setup = Workspace::default().setup;
+                        self.engine.state.setup.settings.batch_size =
+                            self.engine.state.preferences.batch_size;
                         self.open_project(ids[0]);
                     }
                     Err(e) => self.error = e.to_string(),
                 }
             }
             if ui.button("Save for later").clicked() {
-                self.ui.page = Page::Projects;
-                self.save_now();
+                self.save_setup_for_later();
             }
         });
     }
@@ -455,6 +536,26 @@ impl Desktop {
             self.ui.page = Page::Projects;
             return;
         };
+        if !p.is_example() && p.native_run.is_none() {
+            title(
+                ui,
+                &p.name,
+                "Saved preview · real processing has not started",
+            );
+            ui.label("This project was saved by an earlier preview. Its sample answers are not real results. Start a native project from the original material.");
+            if primary(ui, "Start real project from this setup").clicked() {
+                self.engine.state.setup = Setup {
+                    sources: vec![p.source.clone()],
+                    language: p.source.language.clone(),
+                    deck: p.deck.clone(),
+                    settings: p.settings.clone(),
+                    method_chosen: true,
+                    ..Default::default()
+                };
+                self.ui.page = Page::Setup;
+            }
+            return;
+        }
         title(
             ui,
             &p.name,
@@ -532,6 +633,11 @@ impl Desktop {
                 }
             });
         }
+        if p.native_run.is_some() && self.worker.busy() {
+            ui.spinner();
+            ui.label("Processing in the background. You can pause or browse other projects.");
+            return;
+        }
         if p.cleaned {
             ui.label("Working data was cleaned. Export receipts remain below.");
             for r in &p.receipts {
@@ -573,12 +679,12 @@ impl Desktop {
                         }
                     }
                     ui.label(if p.source.media {
-                        "Recording · transcription is simulated"
+                        "Recording · native transcription or supplied subtitles"
                     } else {
                         "Text · no audio tools needed"
                     });
-                    if p.source.path.is_some() {
-                        ui.label("This prototype uses a demonstration transcript and vocabulary. It has not analyzed your file.");
+                    if p.is_example() && p.source.path.is_some() {
+                        ui.label("This example uses demonstration text and vocabulary; it has not analyzed a personal file.");
                     }
                     if primary(ui, "Go to current step").clicked() {
                         self.engine.state.selected_stage = p.stage;
@@ -587,7 +693,7 @@ impl Desktop {
             }
             Stage::Transcript => {
                 if p.source.media {
-                    self.player(ui);
+                    self.player(ui, &p);
                 }
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("Edit text").clicked() {
@@ -641,14 +747,20 @@ impl Desktop {
                         ui.heading("English translation is off");
                         ui.label("An optional translated document or subtitle file, separate from vocabulary meanings.");
                         if ui.button("Enable translation").clicked() {
-                            let current = self.engine.project_mut(id).unwrap();
-                            current.settings.translate = true;
-                            current.stage = Stage::Translation;
-                            current.status = Status::Paused;
-                            current.revision += 1;
-                            current.exchange = None;
-                            current.words.clear();
-                            current.previewed_revision = None;
+                            if p.native_run.is_some() {
+                                let mut settings = p.settings.clone();
+                                settings.translate = true;
+                                self.run(|engine| engine.update_settings(id, settings));
+                            } else {
+                                let current = self.engine.project_mut(id).unwrap();
+                                current.settings.translate = true;
+                                current.stage = Stage::Translation;
+                                current.status = Status::Paused;
+                                current.revision += 1;
+                                current.exchange = None;
+                                current.words.clear();
+                                current.previewed_revision = None;
+                            }
                         }
                     });
                 } else {
@@ -684,14 +796,6 @@ impl Desktop {
             for event in &p.activity {
                 ui.label(event);
             }
-            if ui.button("Simulate a connection failure").clicked() {
-                self.run(|e| {
-                    e.fail(
-                        id,
-                        "Example connection failed. Your accepted work is safe. Retry when ready.",
-                    )
-                });
-            }
         });
     }
     fn assistant_entry(&mut self, ui: &mut egui::Ui, p: &Project) {
@@ -718,7 +822,7 @@ impl Desktop {
             return;
         };
         let id = p.id;
-        if p.settings.for_stage(exchange.stage) == Method::Manual {
+        if p.is_example() && p.settings.for_stage(exchange.stage) == Method::Manual {
             if exchange.stage == Stage::Words {
                 return;
             }
@@ -791,11 +895,11 @@ impl Desktop {
             ui.collapsing("Need a different way?",|ui|{
                 if ui.button("The chat says this is too long").clicked(){self.run(|e|e.shorten_request(id));}
                 if ui.button("Finish these items myself").clicked(){self.run(|e|e.change_method(id,Method::Manual));}
-                if ui.button("Use automatic processing (simulation)").clicked(){self.run(|e|e.change_method(id,Method::Api));}
+                if ui.button("Use automatic processing").clicked(){self.run(|e|e.change_method(id,Method::Api));}
 
                 ui.label("At a service limit? You can pause, change websites, or return later. Accepted answers stay saved.");
             });
-            ui.collapsing("Try a sample reply — prototype only",|ui|{
+            if p.is_example() { ui.collapsing("Try a sample reply — example only",|ui|{
                 ui.small("Use this to explore the flow without an account. Sample data is not extracted from your source.");
                 if ui.button("Fill sample reply").clicked(){
                     match self.engine.sample_reply(id){Ok(raw)=>self.engine.project_mut(id).unwrap().exchange.as_mut().unwrap().draft=raw,Err(e)=>self.error=e.to_string()}
@@ -806,7 +910,7 @@ impl Desktop {
                         if let Some(rows)=value["decisions"].as_array_mut(){rows.pop();}
                         self.engine.project_mut(id).unwrap().exchange.as_mut().unwrap().draft=serde_json::to_string_pretty(&value).unwrap();
                     }
-            });
+            }); }
         });
     }
     fn assistant_send(&mut self, ui: &mut egui::Ui, p: &Project) {
@@ -906,7 +1010,11 @@ impl Desktop {
     fn words(&mut self, ui: &mut egui::Ui, p: &Project) {
         let id = p.id;
         if p.words.is_empty() {
-            ui.label("Sample vocabulary is being prepared.");
+            ui.label(if p.native_run.is_some() {
+                "Vocabulary will appear here after extraction."
+            } else {
+                "Sample vocabulary is being prepared."
+            });
             return;
         }
         if p.exchange.is_some() && p.settings.method == Method::Browser {
@@ -914,7 +1022,9 @@ impl Desktop {
         }
         ui.add_space(14.0);
         ui.heading("Your words");
-        ui.small("Demonstration vocabulary — not extracted from your file.");
+        if p.is_example() {
+            ui.small("Demonstration vocabulary — not extracted from your file.");
+        }
         ui.horizontal_wrapped(|ui| {
             for filter in ["All", "Needs attention", "Included", "Excluded"] {
                 ui.selectable_value(&mut self.ui.word_filter, filter.into(), filter);
@@ -964,17 +1074,55 @@ impl Desktop {
                 .add(text_input(&mut meaning).desired_width(f32::INFINITY))
                 .changed()
             {
-                self.run(|e| e.edit_word(id, &word.id, meaning, word.notes.clone()));
+                if p.native_run.is_some() {
+                    let current = self.engine.project_mut(id).unwrap();
+                    current
+                        .words
+                        .iter_mut()
+                        .find(|entry| entry.id == word.id)
+                        .unwrap()
+                        .meaning = meaning;
+                    current.previewed_revision = None;
+                    current.native_dirty = true;
+                } else {
+                    self.run(|e| e.edit_word(id, &word.id, meaning, word.notes.clone()));
+                }
             }
             ui.label("Example");
             ui.label(RichText::new(&word.example).italics());
             if p.source.media {
-                self.player(ui);
+                self.player(ui, p);
             }
             let mut notes = word.notes.clone();
             ui.label("Notes");
             if ui.add(text_input(&mut notes)).changed() {
-                self.run(|e| e.edit_word(id, &word.id, word.meaning.clone(), notes));
+                if p.native_run.is_some() {
+                    let current = self.engine.project_mut(id).unwrap();
+                    current
+                        .words
+                        .iter_mut()
+                        .find(|entry| entry.id == word.id)
+                        .unwrap()
+                        .notes = notes;
+                    current.previewed_revision = None;
+                    current.native_dirty = true;
+                } else {
+                    self.run(|e| e.edit_word(id, &word.id, word.meaning.clone(), notes));
+                }
+            }
+            if p.native_run.is_some() && ui.button("Save word changes").clicked() {
+                let current = self
+                    .engine
+                    .project(id)
+                    .unwrap()
+                    .words
+                    .iter()
+                    .find(|entry| entry.id == word.id)
+                    .unwrap()
+                    .clone();
+                self.run(|engine| {
+                    engine.edit_word(id, &current.id, current.meaning, current.notes)
+                });
             }
             ui.horizontal_wrapped(|ui| {
                 if primary(ui, "Include").clicked() {
@@ -987,13 +1135,16 @@ impl Desktop {
                     self.run(|e| e.decide(id, &word.id, Decision::Pending));
                 }
             });
-            ui.collapsing("Add to words I know…",|ui|{
-                ui.small("Explicitly adds to the first managed profile. External Blitzer lists are never changed.");
-                if let Some(profile)=self.engine.state.profiles.first_mut(){
-                    ui.horizontal_wrapped(|ui|{
-                        if ui.button("This exact spelling").clicked(){profile.exact_words.push_str(&format!("{}\n",word.term));self.notice="Added to the managed spelling list. Filtering is not connected yet.".into();}
-                        if ui.button("This word family").clicked(){profile.word_families.push_str(&format!("{}\n",word.term));self.notice="Added to the managed family list. Filtering is not connected yet.".into();}
+            ui.collapsing("Add to words I know…", |ui| {
+                if let Some(profile) = self.engine.state.profiles.iter_mut().find(|profile| profile.name == p.settings.profile_name) {
+                    ui.small(format!("Adds to {} for future projects using this profile. External lists are unchanged.", profile.name));
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("This exact spelling").clicked() { profile.exact_words.push_str(&format!("{}\n", word.term)); self.notice = "Added to this profile's spelling list for future projects.".into(); }
+                        if ui.button("This word family").clicked() { profile.word_families.push_str(&format!("{}\n", word.term)); self.notice = "Added to this profile's family list for future projects.".into(); }
                     });
+                } else {
+                    ui.label("This project uses no saved profile. Choose a profile when starting a project to keep a reusable list of known words.");
+                    if ui.button("Manage saved profiles").clicked() { self.ui.page = Page::Profiles; }
                 }
             });
         });
@@ -1087,7 +1238,7 @@ impl Desktop {
             });
         }
         if p.source.media {
-            self.player(ui);
+            self.player(ui, p);
         }
         ui.horizontal_wrapped(|ui| {
             if ui.button("Card design…").clicked() {
@@ -1100,7 +1251,7 @@ impl Desktop {
                 }
             }
         });
-        ui.small("Prototype preview uses plain text. Full Anki HTML/CSS rendering is a later integration.");
+        ui.small("Preview shows card content as plain text. Exported decks use the configured Anki HTML and CSS.");
     }
     fn exports(&mut self, ui: &mut egui::Ui, p: &Project) {
         title(
@@ -1121,19 +1272,48 @@ impl Desktop {
             }
             return;
         }
+        if p.native_run.is_some() {
+            card(ui, |ui| {
+                ui.heading("Create a portable deck");
+                ui.label("The deck includes your reviewed cards and their media. Export files are kept inside this project's folder.");
+                if primary(ui, "Create Anki deck file").clicked() {
+                    self.run(|engine| engine.export_demo(p.id, "APKG"));
+                }
+                if ui.button("Create table and media folder").clicked() {
+                    self.run(|engine| engine.export_demo(p.id, "TSV"));
+                }
+            });
+            card(ui, |ui| {
+                ui.heading("Send to Anki");
+                ui.label("Open Anki with AnkiConnect installed. Existing cards follow the configured skip/update policy; scheduling is preserved.");
+                if ui.button("Send reviewed cards to Anki").clicked() {
+                    self.run(|engine| engine.export_demo(p.id, "Anki"));
+                }
+            });
+            for receipt in &p.receipts {
+                ui.label(&receipt.label);
+            }
+            if !p.receipts.is_empty()
+                && ui.button("Show exported files").clicked()
+                && let Some(directory) = &p.native_run
+                && let Err(error) = blitzline_adapters::pipeline::open_file(
+                    &std::path::Path::new(directory).join("exports"),
+                )
+            {
+                self.error = error.message;
+            }
+            return;
+        }
         card(ui, |ui| {
             ui.heading("Save an Anki deck file");
-            ui.label("The real pipeline will write a portable .apkg file. This prototype records a simulated export.");
+            ui.label("This example records a practice export. Start a real project to create an Anki deck.");
             if primary(ui, "Simulate deck export").clicked() {
                 self.run(|e| e.export_demo(p.id, "APKG"));
             }
         });
         card(ui, |ui| {
             ui.heading("Send to Anki");
-            ui.label("Requires AnkiConnect. Delivery is not connected in this prototype.");
-            if ui.button("Try simulated delivery").clicked() {
-                self.run(|e| e.export_demo(p.id, "Anki"));
-            }
+            ui.label("Examples do not send cards to Anki. Real projects support AnkiConnect.");
         });
         ui.collapsing("Export a table and media", |ui| {
             ui.label("Save the example words as a real TSV. No media is generated.");
@@ -1161,9 +1341,20 @@ impl Desktop {
             }
         }
     }
-    fn player(&mut self, ui: &mut egui::Ui) {
+    fn player(&mut self, ui: &mut egui::Ui, project: &Project) {
+        if !project.is_example() {
+            if ui.button("Open recording in your media player").clicked()
+                && let Some(path) = &project.source.path
+                && let Err(error) =
+                    blitzline_adapters::pipeline::open_file(std::path::Path::new(path))
+            {
+                self.error = error.message;
+            }
+            metadata(ui, "Playback opens in your system's media player.");
+            return;
+        }
         card(ui, |ui| {
-            ui.small("DEMO PLAYER · No audio is played in the skeleton");
+            ui.small("EXAMPLE PLAYER · No audio is played");
             ui.horizontal_wrapped(|ui| {
                 if ui
                     .button(if self.playback {
@@ -1234,9 +1425,20 @@ pub(super) fn stage_methods(ui: &mut egui::Ui, settings: &mut Settings) {
     checkbox(
         ui,
         &mut settings.automatic_export,
-        "Automatically simulate export when every word is resolved",
+        "Automatically export when every word is resolved",
     );
 }
 fn yes(value: bool) -> &'static str {
     if value { "On" } else { "Off" }
+}
+
+fn setup_heading(ui: &mut egui::Ui, title: &str, help: &str) {
+    ui.horizontal_wrapped(|ui| {
+        ui.heading(title);
+        let response = ui.small_button("?").on_hover_text(help);
+        egui::Popup::menu(&response).show(|ui| {
+            ui.set_max_width(360.0);
+            ui.label(help);
+        });
+    });
 }

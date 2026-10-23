@@ -1,0 +1,1280 @@
+{
+  "blitzer-False": {
+    "models": {
+      "362603794": {
+        "css": ".card {\n    font-family: Avenir Next;\n    font-size: 35px;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n\nb {\n\tcolor: black;\n\topacity: 35%;\n\tfont-weight: bold;\n}\n\n@media screen and (max-device-width: 600px) {\n    b {\n        color: lightblue;\n        opacity: 100%;\n        font-style: italic;\n    }\n}",
+        "did": 495983779,
+        "flds": [
+          {
+            "name": "Word",
+            "ord": 0,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Translation",
+            "ord": 1,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence1",
+            "ord": 2,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence2",
+            "ord": 3,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Comments",
+            "ord": 4,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Frequency",
+            "ord": 5,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence1 Audio",
+            "ord": 6,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence2 Audio",
+            "ord": 7,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Word Audio",
+            "ord": 8,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Image",
+            "ord": 9,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "FillForTwoWay",
+            "ord": 10,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          }
+        ],
+        "id": "362603794",
+        "latexPost": "\\end{document}",
+        "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+        "latexsvg": false,
+        "mod": 1792522290,
+        "name": "Blitzer Basic",
+        "req": [
+          [
+            0,
+            "all",
+            [
+              10
+            ]
+          ],
+          [
+            1,
+            "all",
+            [
+              2
+            ]
+          ],
+          [
+            2,
+            "all",
+            [
+              3
+            ]
+          ]
+        ],
+        "sortf": 0,
+        "tags": [],
+        "tmpls": [
+          {
+            "name": "Recall",
+            "qfmt": "{{#FillForTwoWay}}\n\n{{Translation}}\n<br>\n\n{{type:Word}}\n\n{{/FillForTwoWay}}",
+            "afmt": "{{FrontSide}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> \n<hr style=\"margin: 1% 25% 1% 25%\">\n\n{{#Sentence1}}\n  {{Sentence1}} <br> {{Sentence1 Audio}}\n{{/Sentence1}}\n<br>\n\n{{#Sentence2}}\n  {{Sentence2}} <br> {{Sentence2 Audio}}\n{{/Sentence2}}\n\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}\n\n",
+            "ord": 0,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          },
+          {
+            "name": "Sentence1",
+            "qfmt": "{{#Sentence1}}\n\n<div id=\"sentence\">{{Sentence1}}</div>\n<br>{{Sentence1 Audio}}\n\n{{/Sentence1}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>",
+            "afmt": "{{FrontSide}}\n<br>\n{{Sentence1}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}",
+            "ord": 1,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          },
+          {
+            "name": "Sentence2",
+            "qfmt": "{{#Sentence2}}\n\n<div id=\"sentence\">{{Sentence2}}</div>\n<br>{{Sentence2 Audio}}\n\n{{/Sentence2}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>\n",
+            "afmt": "{{FrontSide}}\n<br>\n{{Sentence2}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}",
+            "ord": 2,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          }
+        ],
+        "type": 0,
+        "usn": -1,
+        "vers": []
+      }
+    },
+    "decks": {
+      "1": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 10,
+        "extendRev": 50,
+        "id": 1,
+        "lrnToday": [
+          0,
+          0
+        ],
+        "mod": 1425279151,
+        "name": "Default",
+        "newToday": [
+          0,
+          0
+        ],
+        "revToday": [
+          0,
+          0
+        ],
+        "timeToday": [
+          0,
+          0
+        ],
+        "usn": 0
+      },
+      "495983779": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 0,
+        "extendRev": 50,
+        "id": 495983779,
+        "lrnToday": [
+          163,
+          2
+        ],
+        "mod": 1425278051,
+        "name": "Blitzline",
+        "newToday": [
+          163,
+          2
+        ],
+        "revToday": [
+          163,
+          0
+        ],
+        "timeToday": [
+          163,
+          23598
+        ],
+        "usn": -1
+      }
+    },
+    "conf": {
+      "activeDecks": [
+        1
+      ],
+      "addToCur": true,
+      "collapseTime": 1200,
+      "curDeck": 1,
+      "curModel": "1425279151691",
+      "dueCounts": true,
+      "estTimes": true,
+      "newBury": true,
+      "newSpread": 0,
+      "nextPos": 1,
+      "sortBackwards": false,
+      "sortType": "noteFld",
+      "timeLim": 0
+    },
+    "dconf": {
+      "1": {
+        "autoplay": true,
+        "id": 1,
+        "lapse": {
+          "delays": [
+            10
+          ],
+          "leechAction": 0,
+          "leechFails": 8,
+          "minInt": 1,
+          "mult": 0
+        },
+        "maxTaken": 60,
+        "mod": 0,
+        "name": "Default",
+        "new": {
+          "bury": true,
+          "delays": [
+            1,
+            10
+          ],
+          "initialFactor": 2500,
+          "ints": [
+            1,
+            4,
+            7
+          ],
+          "order": 1,
+          "perDay": 20,
+          "separate": true
+        },
+        "replayq": true,
+        "rev": {
+          "bury": true,
+          "ease4": 1.3,
+          "fuzz": 0.05,
+          "ivlFct": 1,
+          "maxIvl": 36500,
+          "minSpace": 1,
+          "perDay": 100
+        },
+        "timer": 0,
+        "usn": 0
+      }
+    },
+    "tags": {},
+    "notes": [
+      [
+        "blitzline-0e1fb22ebefb9ba4df2c5899270b356a",
+        362603794,
+        "mačka\u001fcat\u001f<b>Mačka</b> spi.\u001f\u001f\u001f2\u001f\u001f\u001f\u001f\u001f"
+      ],
+      [
+        "blitzline-25075d5d2dc8ae085d1927251bdda30a",
+        362603794,
+        "čakati\u001fwait\u001fCafé <b>čaka</b>.\u001f\u001f\u001f1\u001f\u001f\u001f\u001f\u001f"
+      ]
+    ],
+    "cards": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "schema": [
+      [
+        "CREATE TABLE col (\n    id              integer primary key,\n    crt             integer not null,\n    mod             integer not null,\n    scm             integer not null,\n    ver             integer not null,\n    dty             integer not null,\n    usn             integer not null,\n    ls              integer not null,\n    conf            text not null,\n    models          text not null,\n    decks           text not null,\n    dconf           text not null,\n    tags            text not null\n)"
+      ],
+      [
+        "CREATE TABLE notes (\n    id              integer primary key,   /* 0 */\n    guid            text not null,         /* 1 */\n    mid             integer not null,      /* 2 */\n    mod             integer not null,      /* 3 */\n    usn             integer not null,      /* 4 */\n    tags            text not null,         /* 5 */\n    flds            text not null,         /* 6 */\n    sfld            integer not null,      /* 7 */\n    csum            integer not null,      /* 8 */\n    flags           integer not null,      /* 9 */\n    data            text not null          /* 10 */\n)"
+      ],
+      [
+        "CREATE TABLE cards (\n    id              integer primary key,   /* 0 */\n    nid             integer not null,      /* 1 */\n    did             integer not null,      /* 2 */\n    ord             integer not null,      /* 3 */\n    mod             integer not null,      /* 4 */\n    usn             integer not null,      /* 5 */\n    type            integer not null,      /* 6 */\n    queue           integer not null,      /* 7 */\n    due             integer not null,      /* 8 */\n    ivl             integer not null,      /* 9 */\n    factor          integer not null,      /* 10 */\n    reps            integer not null,      /* 11 */\n    lapses          integer not null,      /* 12 */\n    left            integer not null,      /* 13 */\n    odue            integer not null,      /* 14 */\n    odid            integer not null,      /* 15 */\n    flags           integer not null,      /* 16 */\n    data            text not null          /* 17 */\n)"
+      ],
+      [
+        "CREATE TABLE revlog (\n    id              integer primary key,\n    cid             integer not null,\n    usn             integer not null,\n    ease            integer not null,\n    ivl             integer not null,\n    lastIvl         integer not null,\n    factor          integer not null,\n    time            integer not null,\n    type            integer not null\n)"
+      ],
+      [
+        "CREATE TABLE graves (\n    usn             integer not null,\n    oid             integer not null,\n    type            integer not null\n)"
+      ]
+    ]
+  },
+  "blitzer-True": {
+    "models": {
+      "362603794": {
+        "css": ".card {\n    font-family: Avenir Next;\n    font-size: 35px;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n\nb {\n\tcolor: black;\n\topacity: 35%;\n\tfont-weight: bold;\n}\n\n@media screen and (max-device-width: 600px) {\n    b {\n        color: lightblue;\n        opacity: 100%;\n        font-style: italic;\n    }\n}",
+        "did": 495983779,
+        "flds": [
+          {
+            "name": "Word",
+            "ord": 0,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Translation",
+            "ord": 1,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence1",
+            "ord": 2,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence2",
+            "ord": 3,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Comments",
+            "ord": 4,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Frequency",
+            "ord": 5,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence1 Audio",
+            "ord": 6,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence2 Audio",
+            "ord": 7,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Word Audio",
+            "ord": 8,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Image",
+            "ord": 9,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "FillForTwoWay",
+            "ord": 10,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          }
+        ],
+        "id": "362603794",
+        "latexPost": "\\end{document}",
+        "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+        "latexsvg": false,
+        "mod": 1792522290,
+        "name": "Blitzer Basic",
+        "req": [
+          [
+            0,
+            "all",
+            [
+              10
+            ]
+          ],
+          [
+            1,
+            "all",
+            [
+              2
+            ]
+          ],
+          [
+            2,
+            "all",
+            [
+              3
+            ]
+          ]
+        ],
+        "sortf": 0,
+        "tags": [],
+        "tmpls": [
+          {
+            "name": "Recall",
+            "qfmt": "{{#FillForTwoWay}}\n\n{{Translation}}\n<br>\n\n{{type:Word}}\n\n{{/FillForTwoWay}}",
+            "afmt": "{{FrontSide}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> \n<hr style=\"margin: 1% 25% 1% 25%\">\n\n{{#Sentence1}}\n  {{Sentence1}} <br> {{Sentence1 Audio}}\n{{/Sentence1}}\n<br>\n\n{{#Sentence2}}\n  {{Sentence2}} <br> {{Sentence2 Audio}}\n{{/Sentence2}}\n\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}\n\n",
+            "ord": 0,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          },
+          {
+            "name": "Sentence1",
+            "qfmt": "{{#Sentence1}}\n\n<div id=\"sentence\">{{Sentence1}}</div>\n<br>{{Sentence1 Audio}}\n\n{{/Sentence1}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>",
+            "afmt": "{{FrontSide}}\n<br>\n{{Sentence1}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}",
+            "ord": 1,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          },
+          {
+            "name": "Sentence2",
+            "qfmt": "{{#Sentence2}}\n\n<div id=\"sentence\">{{Sentence2}}</div>\n<br>{{Sentence2 Audio}}\n\n{{/Sentence2}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>\n",
+            "afmt": "{{FrontSide}}\n<br>\n{{Sentence2}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}",
+            "ord": 2,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          }
+        ],
+        "type": 0,
+        "usn": -1,
+        "vers": []
+      }
+    },
+    "decks": {
+      "1": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 10,
+        "extendRev": 50,
+        "id": 1,
+        "lrnToday": [
+          0,
+          0
+        ],
+        "mod": 1425279151,
+        "name": "Default",
+        "newToday": [
+          0,
+          0
+        ],
+        "revToday": [
+          0,
+          0
+        ],
+        "timeToday": [
+          0,
+          0
+        ],
+        "usn": 0
+      },
+      "495983779": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 0,
+        "extendRev": 50,
+        "id": 495983779,
+        "lrnToday": [
+          163,
+          2
+        ],
+        "mod": 1425278051,
+        "name": "Blitzline",
+        "newToday": [
+          163,
+          2
+        ],
+        "revToday": [
+          163,
+          0
+        ],
+        "timeToday": [
+          163,
+          23598
+        ],
+        "usn": -1
+      }
+    },
+    "conf": {
+      "activeDecks": [
+        1
+      ],
+      "addToCur": true,
+      "collapseTime": 1200,
+      "curDeck": 1,
+      "curModel": "1425279151691",
+      "dueCounts": true,
+      "estTimes": true,
+      "newBury": true,
+      "newSpread": 0,
+      "nextPos": 1,
+      "sortBackwards": false,
+      "sortType": "noteFld",
+      "timeLim": 0
+    },
+    "dconf": {
+      "1": {
+        "autoplay": true,
+        "id": 1,
+        "lapse": {
+          "delays": [
+            10
+          ],
+          "leechAction": 0,
+          "leechFails": 8,
+          "minInt": 1,
+          "mult": 0
+        },
+        "maxTaken": 60,
+        "mod": 0,
+        "name": "Default",
+        "new": {
+          "bury": true,
+          "delays": [
+            1,
+            10
+          ],
+          "initialFactor": 2500,
+          "ints": [
+            1,
+            4,
+            7
+          ],
+          "order": 1,
+          "perDay": 20,
+          "separate": true
+        },
+        "replayq": true,
+        "rev": {
+          "bury": true,
+          "ease4": 1.3,
+          "fuzz": 0.05,
+          "ivlFct": 1,
+          "maxIvl": 36500,
+          "minSpace": 1,
+          "perDay": 100
+        },
+        "timer": 0,
+        "usn": 0
+      }
+    },
+    "tags": {},
+    "notes": [
+      [
+        "blitzline-0e1fb22ebefb9ba4df2c5899270b356a",
+        362603794,
+        "mačka\u001fcat\u001f<b>Mačka</b> spi.\u001f\u001f\u001f2\u001f\u001f\u001f\u001f\u001f1"
+      ],
+      [
+        "blitzline-25075d5d2dc8ae085d1927251bdda30a",
+        362603794,
+        "čakati\u001fwait\u001fCafé <b>čaka</b>.\u001f\u001f\u001f1\u001f\u001f\u001f\u001f\u001f1"
+      ]
+    ],
+    "cards": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "schema": [
+      [
+        "CREATE TABLE col (\n    id              integer primary key,\n    crt             integer not null,\n    mod             integer not null,\n    scm             integer not null,\n    ver             integer not null,\n    dty             integer not null,\n    usn             integer not null,\n    ls              integer not null,\n    conf            text not null,\n    models          text not null,\n    decks           text not null,\n    dconf           text not null,\n    tags            text not null\n)"
+      ],
+      [
+        "CREATE TABLE notes (\n    id              integer primary key,   /* 0 */\n    guid            text not null,         /* 1 */\n    mid             integer not null,      /* 2 */\n    mod             integer not null,      /* 3 */\n    usn             integer not null,      /* 4 */\n    tags            text not null,         /* 5 */\n    flds            text not null,         /* 6 */\n    sfld            integer not null,      /* 7 */\n    csum            integer not null,      /* 8 */\n    flags           integer not null,      /* 9 */\n    data            text not null          /* 10 */\n)"
+      ],
+      [
+        "CREATE TABLE cards (\n    id              integer primary key,   /* 0 */\n    nid             integer not null,      /* 1 */\n    did             integer not null,      /* 2 */\n    ord             integer not null,      /* 3 */\n    mod             integer not null,      /* 4 */\n    usn             integer not null,      /* 5 */\n    type            integer not null,      /* 6 */\n    queue           integer not null,      /* 7 */\n    due             integer not null,      /* 8 */\n    ivl             integer not null,      /* 9 */\n    factor          integer not null,      /* 10 */\n    reps            integer not null,      /* 11 */\n    lapses          integer not null,      /* 12 */\n    left            integer not null,      /* 13 */\n    odue            integer not null,      /* 14 */\n    odid            integer not null,      /* 15 */\n    flags           integer not null,      /* 16 */\n    data            text not null          /* 17 */\n)"
+      ],
+      [
+        "CREATE TABLE revlog (\n    id              integer primary key,\n    cid             integer not null,\n    usn             integer not null,\n    ease            integer not null,\n    ivl             integer not null,\n    lastIvl         integer not null,\n    factor          integer not null,\n    time            integer not null,\n    type            integer not null\n)"
+      ],
+      [
+        "CREATE TABLE graves (\n    usn             integer not null,\n    oid             integer not null,\n    type            integer not null\n)"
+      ]
+    ]
+  },
+  "legacy-False": {
+    "models": {
+      "1182257297": {
+        "css": ".card { font-family: sans-serif; font-size: 22px; text-align: left; } b { color: #3972bb; } small { font-size: 12px; }",
+        "did": 495983779,
+        "flds": [
+          {
+            "name": "Word",
+            "ord": 0,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "English",
+            "ord": 1,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence1",
+            "ord": 2,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence2",
+            "ord": 3,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Notes",
+            "ord": 4,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Frequency",
+            "ord": 5,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Media1",
+            "ord": 6,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Media2",
+            "ord": 7,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Source",
+            "ord": 8,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "BlitzlineId",
+            "ord": 9,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          }
+        ],
+        "id": "1182257297",
+        "latexPost": "\\end{document}",
+        "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+        "latexsvg": false,
+        "mod": 1792522290,
+        "name": "Blitzer Basic",
+        "req": [
+          [
+            0,
+            "any",
+            [
+              0,
+              2,
+              6
+            ]
+          ]
+        ],
+        "sortf": 0,
+        "tags": [],
+        "tmpls": [
+          {
+            "name": "Vocabulary",
+            "qfmt": "{{Word}}<br>{{Sentence1}}<br>{{Media1}}",
+            "afmt": "{{FrontSide}}<hr id=answer>{{English}}<br>{{Sentence2}}<br>{{Media2}}<br>{{Notes}}<br><small>{{Frequency}} occurrences · {{Source}}</small>",
+            "ord": 0,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          }
+        ],
+        "type": 0,
+        "usn": -1,
+        "vers": []
+      }
+    },
+    "decks": {
+      "1": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 10,
+        "extendRev": 50,
+        "id": 1,
+        "lrnToday": [
+          0,
+          0
+        ],
+        "mod": 1425279151,
+        "name": "Default",
+        "newToday": [
+          0,
+          0
+        ],
+        "revToday": [
+          0,
+          0
+        ],
+        "timeToday": [
+          0,
+          0
+        ],
+        "usn": 0
+      },
+      "495983779": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 0,
+        "extendRev": 50,
+        "id": 495983779,
+        "lrnToday": [
+          163,
+          2
+        ],
+        "mod": 1425278051,
+        "name": "Blitzline",
+        "newToday": [
+          163,
+          2
+        ],
+        "revToday": [
+          163,
+          0
+        ],
+        "timeToday": [
+          163,
+          23598
+        ],
+        "usn": -1
+      }
+    },
+    "conf": {
+      "activeDecks": [
+        1
+      ],
+      "addToCur": true,
+      "collapseTime": 1200,
+      "curDeck": 1,
+      "curModel": "1425279151691",
+      "dueCounts": true,
+      "estTimes": true,
+      "newBury": true,
+      "newSpread": 0,
+      "nextPos": 1,
+      "sortBackwards": false,
+      "sortType": "noteFld",
+      "timeLim": 0
+    },
+    "dconf": {
+      "1": {
+        "autoplay": true,
+        "id": 1,
+        "lapse": {
+          "delays": [
+            10
+          ],
+          "leechAction": 0,
+          "leechFails": 8,
+          "minInt": 1,
+          "mult": 0
+        },
+        "maxTaken": 60,
+        "mod": 0,
+        "name": "Default",
+        "new": {
+          "bury": true,
+          "delays": [
+            1,
+            10
+          ],
+          "initialFactor": 2500,
+          "ints": [
+            1,
+            4,
+            7
+          ],
+          "order": 1,
+          "perDay": 20,
+          "separate": true
+        },
+        "replayq": true,
+        "rev": {
+          "bury": true,
+          "ease4": 1.3,
+          "fuzz": 0.05,
+          "ivlFct": 1,
+          "maxIvl": 36500,
+          "minSpace": 1,
+          "perDay": 100
+        },
+        "timer": 0,
+        "usn": 0
+      }
+    },
+    "tags": {},
+    "notes": [
+      [
+        "blitzline-0e1fb22ebefb9ba4df2c5899270b356a",
+        1182257297,
+        "mačka\u001fcat\u001f<b>Mačka</b> spi.\u001f\u001f\u001f2\u001f\u001f\u001fsample.txt\u001fblitzline-0e1fb22ebefb9ba4df2c5899270b356a"
+      ],
+      [
+        "blitzline-25075d5d2dc8ae085d1927251bdda30a",
+        1182257297,
+        "čakati\u001fwait\u001fCafé <b>čaka</b>.\u001f\u001f\u001f1\u001f\u001f\u001fsample.txt\u001fblitzline-25075d5d2dc8ae085d1927251bdda30a"
+      ]
+    ],
+    "cards": [
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "schema": [
+      [
+        "CREATE TABLE col (\n    id              integer primary key,\n    crt             integer not null,\n    mod             integer not null,\n    scm             integer not null,\n    ver             integer not null,\n    dty             integer not null,\n    usn             integer not null,\n    ls              integer not null,\n    conf            text not null,\n    models          text not null,\n    decks           text not null,\n    dconf           text not null,\n    tags            text not null\n)"
+      ],
+      [
+        "CREATE TABLE notes (\n    id              integer primary key,   /* 0 */\n    guid            text not null,         /* 1 */\n    mid             integer not null,      /* 2 */\n    mod             integer not null,      /* 3 */\n    usn             integer not null,      /* 4 */\n    tags            text not null,         /* 5 */\n    flds            text not null,         /* 6 */\n    sfld            integer not null,      /* 7 */\n    csum            integer not null,      /* 8 */\n    flags           integer not null,      /* 9 */\n    data            text not null          /* 10 */\n)"
+      ],
+      [
+        "CREATE TABLE cards (\n    id              integer primary key,   /* 0 */\n    nid             integer not null,      /* 1 */\n    did             integer not null,      /* 2 */\n    ord             integer not null,      /* 3 */\n    mod             integer not null,      /* 4 */\n    usn             integer not null,      /* 5 */\n    type            integer not null,      /* 6 */\n    queue           integer not null,      /* 7 */\n    due             integer not null,      /* 8 */\n    ivl             integer not null,      /* 9 */\n    factor          integer not null,      /* 10 */\n    reps            integer not null,      /* 11 */\n    lapses          integer not null,      /* 12 */\n    left            integer not null,      /* 13 */\n    odue            integer not null,      /* 14 */\n    odid            integer not null,      /* 15 */\n    flags           integer not null,      /* 16 */\n    data            text not null          /* 17 */\n)"
+      ],
+      [
+        "CREATE TABLE revlog (\n    id              integer primary key,\n    cid             integer not null,\n    usn             integer not null,\n    ease            integer not null,\n    ivl             integer not null,\n    lastIvl         integer not null,\n    factor          integer not null,\n    time            integer not null,\n    type            integer not null\n)"
+      ],
+      [
+        "CREATE TABLE graves (\n    usn             integer not null,\n    oid             integer not null,\n    type            integer not null\n)"
+      ]
+    ]
+  },
+  "legacy-True": {
+    "models": {
+      "1182257297": {
+        "css": ".card { font-family: sans-serif; font-size: 22px; text-align: left; } b { color: #3972bb; } small { font-size: 12px; }",
+        "did": 495983779,
+        "flds": [
+          {
+            "name": "Word",
+            "ord": 0,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "English",
+            "ord": 1,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence1",
+            "ord": 2,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Sentence2",
+            "ord": 3,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Notes",
+            "ord": 4,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Frequency",
+            "ord": 5,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Media1",
+            "ord": 6,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Media2",
+            "ord": 7,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "Source",
+            "ord": 8,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          },
+          {
+            "name": "BlitzlineId",
+            "ord": 9,
+            "font": "Liberation Sans",
+            "media": [],
+            "rtl": false,
+            "size": 20,
+            "sticky": false
+          }
+        ],
+        "id": "1182257297",
+        "latexPost": "\\end{document}",
+        "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+        "latexsvg": false,
+        "mod": 1792522290,
+        "name": "Blitzer Basic",
+        "req": [
+          [
+            0,
+            "any",
+            [
+              0,
+              2,
+              6
+            ]
+          ]
+        ],
+        "sortf": 0,
+        "tags": [],
+        "tmpls": [
+          {
+            "name": "Vocabulary",
+            "qfmt": "{{Word}}<br>{{Sentence1}}<br>{{Media1}}",
+            "afmt": "{{FrontSide}}<hr id=answer>{{English}}<br>{{Sentence2}}<br>{{Media2}}<br>{{Notes}}<br><small>{{Frequency}} occurrences · {{Source}}</small>",
+            "ord": 0,
+            "bafmt": "",
+            "bqfmt": "",
+            "bfont": "",
+            "bsize": 0,
+            "did": null
+          }
+        ],
+        "type": 0,
+        "usn": -1,
+        "vers": []
+      }
+    },
+    "decks": {
+      "1": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 10,
+        "extendRev": 50,
+        "id": 1,
+        "lrnToday": [
+          0,
+          0
+        ],
+        "mod": 1425279151,
+        "name": "Default",
+        "newToday": [
+          0,
+          0
+        ],
+        "revToday": [
+          0,
+          0
+        ],
+        "timeToday": [
+          0,
+          0
+        ],
+        "usn": 0
+      },
+      "495983779": {
+        "collapsed": false,
+        "conf": 1,
+        "desc": "",
+        "dyn": 0,
+        "extendNew": 0,
+        "extendRev": 50,
+        "id": 495983779,
+        "lrnToday": [
+          163,
+          2
+        ],
+        "mod": 1425278051,
+        "name": "Blitzline",
+        "newToday": [
+          163,
+          2
+        ],
+        "revToday": [
+          163,
+          0
+        ],
+        "timeToday": [
+          163,
+          23598
+        ],
+        "usn": -1
+      }
+    },
+    "conf": {
+      "activeDecks": [
+        1
+      ],
+      "addToCur": true,
+      "collapseTime": 1200,
+      "curDeck": 1,
+      "curModel": "1425279151691",
+      "dueCounts": true,
+      "estTimes": true,
+      "newBury": true,
+      "newSpread": 0,
+      "nextPos": 1,
+      "sortBackwards": false,
+      "sortType": "noteFld",
+      "timeLim": 0
+    },
+    "dconf": {
+      "1": {
+        "autoplay": true,
+        "id": 1,
+        "lapse": {
+          "delays": [
+            10
+          ],
+          "leechAction": 0,
+          "leechFails": 8,
+          "minInt": 1,
+          "mult": 0
+        },
+        "maxTaken": 60,
+        "mod": 0,
+        "name": "Default",
+        "new": {
+          "bury": true,
+          "delays": [
+            1,
+            10
+          ],
+          "initialFactor": 2500,
+          "ints": [
+            1,
+            4,
+            7
+          ],
+          "order": 1,
+          "perDay": 20,
+          "separate": true
+        },
+        "replayq": true,
+        "rev": {
+          "bury": true,
+          "ease4": 1.3,
+          "fuzz": 0.05,
+          "ivlFct": 1,
+          "maxIvl": 36500,
+          "minSpace": 1,
+          "perDay": 100
+        },
+        "timer": 0,
+        "usn": 0
+      }
+    },
+    "tags": {},
+    "notes": [
+      [
+        "blitzline-0e1fb22ebefb9ba4df2c5899270b356a",
+        1182257297,
+        "mačka\u001fcat\u001f<b>Mačka</b> spi.\u001f\u001f\u001f2\u001f\u001f\u001fsample.txt\u001fblitzline-0e1fb22ebefb9ba4df2c5899270b356a"
+      ],
+      [
+        "blitzline-25075d5d2dc8ae085d1927251bdda30a",
+        1182257297,
+        "čakati\u001fwait\u001fCafé <b>čaka</b>.\u001f\u001f\u001f1\u001f\u001f\u001fsample.txt\u001fblitzline-25075d5d2dc8ae085d1927251bdda30a"
+      ]
+    ],
+    "cards": [
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "schema": [
+      [
+        "CREATE TABLE col (\n    id              integer primary key,\n    crt             integer not null,\n    mod             integer not null,\n    scm             integer not null,\n    ver             integer not null,\n    dty             integer not null,\n    usn             integer not null,\n    ls              integer not null,\n    conf            text not null,\n    models          text not null,\n    decks           text not null,\n    dconf           text not null,\n    tags            text not null\n)"
+      ],
+      [
+        "CREATE TABLE notes (\n    id              integer primary key,   /* 0 */\n    guid            text not null,         /* 1 */\n    mid             integer not null,      /* 2 */\n    mod             integer not null,      /* 3 */\n    usn             integer not null,      /* 4 */\n    tags            text not null,         /* 5 */\n    flds            text not null,         /* 6 */\n    sfld            integer not null,      /* 7 */\n    csum            integer not null,      /* 8 */\n    flags           integer not null,      /* 9 */\n    data            text not null          /* 10 */\n)"
+      ],
+      [
+        "CREATE TABLE cards (\n    id              integer primary key,   /* 0 */\n    nid             integer not null,      /* 1 */\n    did             integer not null,      /* 2 */\n    ord             integer not null,      /* 3 */\n    mod             integer not null,      /* 4 */\n    usn             integer not null,      /* 5 */\n    type            integer not null,      /* 6 */\n    queue           integer not null,      /* 7 */\n    due             integer not null,      /* 8 */\n    ivl             integer not null,      /* 9 */\n    factor          integer not null,      /* 10 */\n    reps            integer not null,      /* 11 */\n    lapses          integer not null,      /* 12 */\n    left            integer not null,      /* 13 */\n    odue            integer not null,      /* 14 */\n    odid            integer not null,      /* 15 */\n    flags           integer not null,      /* 16 */\n    data            text not null          /* 17 */\n)"
+      ],
+      [
+        "CREATE TABLE revlog (\n    id              integer primary key,\n    cid             integer not null,\n    usn             integer not null,\n    ease            integer not null,\n    ivl             integer not null,\n    lastIvl         integer not null,\n    factor          integer not null,\n    time            integer not null,\n    type            integer not null\n)"
+      ],
+      [
+        "CREATE TABLE graves (\n    usn             integer not null,\n    oid             integer not null,\n    type            integer not null\n)"
+      ]
+    ]
+  }
+}

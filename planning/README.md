@@ -47,28 +47,24 @@ and availability are dependencies of Blitzline's release.
 
 ## Current status
 
-A Cargo workspace, shared simulated engine, CLI, and native desktop skeleton
-now implement the GUI plan for review. The full GUI specification is recorded.
-Real pipeline porting and reference-baseline capture remain pending.
+The native CLI and background desktop pipeline are implemented in Rust, with
+explicit demonstration workflows retained separately. See
+[implementation status](implementation-status.md) for capabilities, evidence,
+limitations, and remaining release gates.
 
 | Milestone | Status |
 | --- | --- |
-| A. Documentation and baseline | Planning documents written; baseline capture and detailed inventory pending |
-| B. Shared contracts and simulated engine | Implemented for prototype workflows |
-| C. GUI design and skeleton | Native prototype implemented; user review and complete accessibility acceptance pending |
-| D. Domain and storage | Planned |
-| E. First working pipeline | Planned |
-| F. LLM automation | Planned |
-| G. Media and transcription | Planned |
-| H. Complete exports | Planned |
-| I. Distribution and release | Planned |
+| A. Documentation and baseline | Captured working-tree provenance; reference suite 184 passed; synthetic fixtures recorded |
+| B. Shared contracts and simulated engine | Implemented; examples remain explicitly isolated |
+| C. GUI design and skeleton | Retained as application; native toolbar and approved appearance; accessibility acceptance remains |
+| D. Domain and storage | Implemented with fixture, transaction, lock, corruption, and restart tests |
+| E. First working pipeline | Native CLI and desktop processing connected; compiled Blitzer release remains external |
+| F. LLM automation | Implemented; provider/repair behavior verified with local services |
+| G. Media and transcription | Native adapters and second ASR implemented; real-media and HTTP tests; model/service release acceptance pending |
+| H. Complete exports | Native TSV/APKG/AnkiConnect implemented; fixture/fake-service checks; isolated live-Anki acceptance pending |
+| I. Distribution and release | Bundled CLI, GUI CLI installation, archive/build workflows; signing/installers/catalogs/clean-machine checks pending |
 
-The prototype uses egui/eframe with AccessKit. This is an implementation default
-for evaluating the approved interaction structure, not a final production
-toolkit commitment. Minimum OS versions and release installers remain pending.
-A local macOS application-bundle helper is available.
-
-Keep milestone status here, architectural responsibilities in
-`architecture.md`, implementation sequencing in `rust-port.md`, and migration
-exceptions in `compatibility.md`. Update the relevant document when a decision
-changes rather than leaving contradictory plans.
+The approved egui/eframe application and Rust AppKit bridge remain in use. The
+GUI prototype is being completed as the product, not replaced by another GUI.
+No installed component requires Python. Distribution readiness remains distinct
+from implemented pipeline capabilities.

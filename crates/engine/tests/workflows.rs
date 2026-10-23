@@ -256,3 +256,48 @@ fn manual_proofreading_and_translation_exchange() {
     complete(&mut engine, id);
     assert_eq!(engine.project(id).unwrap().history.len(), 4);
 }
+
+#[test]
+fn ordinary_unbound_projects_never_receive_demo_results() {
+    let mut engine = Engine::new(Workspace::default());
+    let setup = Setup {
+        pasted_text: "My own text".into(),
+        language: "eng".into(),
+        deck: "Study".into(),
+        method_chosen: true,
+        ..Default::default()
+    };
+    let id = engine.create(&setup).unwrap()[0];
+    for _ in 0..10 {
+        engine.tick();
+    }
+    let project = engine.project(id).unwrap();
+    assert!(!project.is_example());
+    assert!(project.words.is_empty());
+    assert_eq!(project.transcript, "My own text");
+    assert!(engine.resume(id).is_err());
+    assert!(engine.sample_reply(id).is_err());
+    assert!(engine.fail(id, "simulated failure").is_err());
+}
+#[test]
+fn old_preview_projects_require_explicit_restart_from_source() {
+    let mut engine = Engine::new(Workspace::default());
+    let id = engine.example().unwrap();
+    engine.project_mut(id).unwrap().example = false;
+    let mut state = serde_json::to_value(&engine.state).unwrap();
+    state["projects"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("example");
+    let engine = Engine::new(serde_json::from_value(state).unwrap());
+    assert_eq!(engine.project(id).unwrap().status, Status::Failed);
+    assert!(
+        engine
+            .project(id)
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("saved preview")
+    );
+}

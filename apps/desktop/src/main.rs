@@ -41,7 +41,7 @@ fn main() -> eframe::Result {
         .map(|a| a[1].clone());
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Blitzline · Desktop prototype")
+            .with_title("Blitzline")
             .with_inner_size(if narrow {
                 [1024.0, 768.0]
             } else {
@@ -51,7 +51,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "Blitzline Prototype",
+        "Blitzline",
         options,
         Box::new(move |cc| {
             let mut app = Desktop::new(Some(store), state);

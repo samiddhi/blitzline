@@ -1,4 +1,5 @@
-//! Native GUI skeleton. Services and delivery are deliberately simulated.
+//! Native desktop application with background Rust pipeline execution and explicit examples.
+mod live;
 #[cfg(target_os = "macos")]
 mod macos;
 mod screens;
@@ -37,6 +38,7 @@ pub struct UiState {
 }
 
 pub struct Desktop {
+    worker: live::Worker,
     #[cfg(target_os = "macos")]
     native: Option<macos::NativeChrome>,
     pub engine: Engine,
@@ -52,31 +54,72 @@ pub struct Desktop {
     notice: String,
     error: String,
     secret: String,
+    transcription_secret: String,
     import_report: Vec<String>,
+    source_import_errors: Vec<String>,
     edit_text: bool,
     confirm_text: bool,
     confirm_cleanup: bool,
     confirm_delete: Option<u64>,
     confirm_quit: bool,
     quit_allowed: bool,
+    quitting: bool,
     last_tick: Instant,
     last_save: Instant,
     persisted: Vec<u8>,
     design_front: String,
     design_back: String,
     design_css: String,
-    downloading: Option<Instant>,
     playback: bool,
     position: f32,
 }
 
 impl Desktop {
+    fn install_cli(&mut self) {
+        let result = (|| -> std::result::Result<(), String> {
+            let application = std::env::current_exe().map_err(|error| error.to_string())?;
+            let name = if cfg!(windows) {
+                "blitzline.exe"
+            } else {
+                "blitzline"
+            };
+            let source = application
+                .parent()
+                .ok_or("Cannot locate the application folder")?
+                .join(name);
+            let source = blitzline_adapters::pipeline::find_tool(&source.to_string_lossy())
+                .map_err(|error| error.to_string())?;
+            let Some(destination) = rfd::FileDialog::new().set_file_name(name).save_file() else {
+                return Ok(());
+            };
+            blitzline_adapters::pipeline::install_binary(&source, &destination)
+                .map_err(|error| error.to_string())?;
+            self.notice = format!("Command-line tool installed at {}", destination.display());
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.error = error;
+        }
+    }
     pub fn new(store: Option<Store>, state: Workspace) -> Self {
         let ui = store.as_ref().map(Store::load_ui).unwrap_or_default();
         Self {
+            worker: live::Worker::default(),
             #[cfg(target_os = "macos")]
             native: None,
-            engine: Engine::new(state),
+            engine: {
+                let mut engine = Engine::new(state);
+                for project in &engine.state.projects {
+                    if project.native_run.as_ref().is_some_and(|path| {
+                        std::path::Path::new(path).join("manifest.json").is_file()
+                    }) {
+                        engine
+                            .native_actions
+                            .push((project.id, blitzline_engine::NativeAction::Refresh));
+                    }
+                }
+                engine
+            },
             store,
             ui,
             settings_open: false,
@@ -89,20 +132,22 @@ impl Desktop {
             notice: String::new(),
             error: String::new(),
             secret: String::new(),
+            transcription_secret: String::new(),
             import_report: vec![],
+            source_import_errors: vec![],
             edit_text: false,
             confirm_text: false,
             confirm_cleanup: false,
             confirm_delete: None,
             confirm_quit: false,
             quit_allowed: false,
+            quitting: false,
             last_tick: Instant::now(),
             last_save: Instant::now(),
             persisted: vec![],
             design_front: String::new(),
             design_back: String::new(),
             design_css: String::new(),
-            downloading: None,
             playback: false,
             position: 0.0,
         }
@@ -312,10 +357,14 @@ impl Desktop {
             "settings" => self.settings_open = true,
             "help" => self.help_open = true,
             "project-settings" => self.project_settings = Some(id),
-            "help-choice" | "ready" => {
+            "language" | "help-choice" | "ready" => {
                 self.ui.page = Page::Setup;
                 self.engine.state.setup.pasted_text = "A quiet morning.".into();
-                self.engine.state.setup.step = if name == "ready" { 3 } else { 2 };
+                self.engine.state.setup.step = match name {
+                    "ready" => 3,
+                    "language" => 1,
+                    _ => 2,
+                };
             }
             "chat-window" => {
                 self.compact = Some(id);
@@ -409,7 +458,18 @@ impl Desktop {
         }
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.weak("Prototype · Sample processing");
+                ui.weak(
+                    if self.ui.page == Page::Project
+                        && self
+                            .selected()
+                            .and_then(|id| self.engine.project(id).ok())
+                            .is_some_and(Project::is_example)
+                    {
+                        "Example project · Sample processing"
+                    } else {
+                        "Blitzline · Native processing"
+                    },
+                );
                 if self
                     .engine
                     .state
@@ -627,7 +687,7 @@ impl Desktop {
                     ),
                     (
                         "API key",
-                        "A secret issued by an AI service that lets an app make requests for you. A chat subscription and API access may be separate. This prototype makes no requests and never saves keys.",
+                        "A secret issued by an AI service that lets an app make requests for you. A chat subscription and API access may be separate. Automatic processing sends content to the service you selected and may incur charges. Entered keys stay in memory for this session; browser assistance needs no key.",
                     ),
                     (
                         "Word family",
@@ -635,11 +695,11 @@ impl Desktop {
                     ),
                     (
                         "Getting cards into Anki",
-                        "The finished product will save an APKG or use AnkiConnect. This prototype records simulated exports and can save a sample TSV.",
+                        "Create a portable APKG deck or TSV with media, or send reviewed cards to Anki through AnkiConnect. Preview cards before exporting.",
                     ),
                     (
                         "Transcription",
-                        "Turns speech into text. Local processing requires a model; online processing sends audio to your service. Both are simulated here.",
+                        "Turns speech into text. Local processing requires a model; online processing sends audio to your configured service.",
                     ),
                     (
                         "Leaving and returning",
@@ -678,20 +738,20 @@ impl Desktop {
             });
         }
         if self.confirm_cleanup {
-            egui::Window::new("Clean up example project?").collapsible(false).show(ctx,|ui|{
-                ui.label("This simulation clears review drafts and sample cards. Export receipts and source references remain. It cannot be resumed. No original file is removed.");
-                if ui.button("Apply simulated cleanup").clicked(){
-                    if let Some(id)=self.selected() {let p=self.engine.project_mut(id).unwrap();p.words.clear();p.exchange=None;p.history.clear();p.cleaned=true;}
+            egui::Window::new("Clean up project?").collapsible(false).show(ctx,|ui|{
+                ui.label("Removes intermediate files only after checking a complete portable export. Export files and the original source are kept. The project cannot be resumed afterward.");
+                if ui.button("Apply cleanup").clicked(){
+                    if let Some(id)=self.selected() {if self.engine.project(id).unwrap().native_run.is_some() {self.engine.native_actions.push((id,blitzline_engine::NativeAction::Clean));} else {let p=self.engine.project_mut(id).unwrap();p.words.clear();p.exchange=None;p.history.clear();p.cleaned=true;}}
                     self.confirm_cleanup=false;
                 }
                 if ui.button("Cancel").clicked(){self.confirm_cleanup=false;}
             });
         }
         if let Some(id) = self.confirm_delete {
-            egui::Window::new("Delete this prototype project?").collapsible(false).show(ctx,|ui|{
-                ui.label("Its saved review and history will be removed. The original file is never deleted.");
+            egui::Window::new("Remove project from library?").collapsible(false).show(ctx,|ui|{
+                ui.label("Removes this project from the library. Its run folder, exports, and original source are kept.");
                 if ui.button("Delete project").clicked(){
-                    self.engine.state.projects.retain(|p|p.id!=id);self.confirm_delete=None;
+                    self.worker.cancel_project(id);self.engine.state.projects.retain(|p|p.id!=id);self.confirm_delete=None;
                     if self.selected()==Some(id){self.engine.state.selected_project=None;self.ui.page=Page::Projects;}
                     if self.compact==Some(id){self.compact=None;}
                 }
@@ -706,18 +766,22 @@ impl Desktop {
                         "Projects and drafts will be saved. No work runs after the app closes.",
                     );
                     if primary(ui, "Pause and quit").clicked() {
+                        self.quitting = true;
+                        self.engine.native_actions.clear();
+                        self.worker.pause_all();
                         for p in &mut self.engine.state.projects {
                             if matches!(p.status, Status::Running | Status::Queued) {
                                 p.status = Status::Paused;
                             }
                         }
-                        if self.save_now() {
+                        if self.save_now() && !self.worker.busy() {
                             self.quit_allowed = true;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     }
                     if ui.button("Keep working").clicked() {
                         self.confirm_quit = false;
+                        self.quitting = false;
                     }
                 });
         }
@@ -726,6 +790,11 @@ impl Desktop {
 
 impl eframe::App for Desktop {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_native();
+        if self.quitting && !self.worker.busy() && self.save_now() {
+            self.quit_allowed = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native {
             for command in native.commands() {
@@ -750,12 +819,15 @@ impl eframe::App for Desktop {
                 }
             }
         }
-        let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-        for file in dropped {
-            if let Some(path) = file.path {
-                self.add_source(&path);
-                self.ui.page = Page::Setup;
-            }
+        let dropped = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|file| file.path.clone())
+                .collect::<Vec<_>>()
+        });
+        if !dropped.is_empty() {
+            self.add_sources(&dropped);
         }
         if self.last_tick.elapsed() > Duration::from_millis(850) {
             self.engine.tick();
@@ -767,26 +839,19 @@ impl eframe::App for Desktop {
                 }
             }
         }
-        if self
-            .downloading
-            .is_some_and(|s| s.elapsed() > Duration::from_secs(3))
-        {
-            self.engine.state.preferences.local_model_installed = true;
-            self.downloading = None;
-            self.notice = "Example model marked available. No model was downloaded.".into();
-        }
         self.render(ctx);
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native {
             native.report_capture_window();
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.quit_allowed {
-            if self
-                .engine
-                .state
-                .projects
-                .iter()
-                .any(|p| matches!(p.status, Status::Running | Status::Queued))
+            if self.worker.busy()
+                || self
+                    .engine
+                    .state
+                    .projects
+                    .iter()
+                    .any(|p| matches!(p.status, Status::Running | Status::Queued))
             {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.confirm_quit = true;
@@ -801,6 +866,9 @@ impl eframe::App for Desktop {
         ctx.request_repaint_after(Duration::from_millis(200));
     }
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.engine.native_actions.clear();
+        self.worker.finish();
+        self.poll_native();
         self.save_now();
     }
 }
@@ -1053,6 +1121,7 @@ mod tests {
         let store = Store::open(directory.path().into()).unwrap();
         let mut app = Desktop::new(Some(store), Workspace::default());
         app.secret = "MUST_NOT_PERSIST".into();
+        app.transcription_secret = "ASR_MUST_NOT_PERSIST".into();
         app.save_now();
         for file in ["workspace.json", "ui.json"] {
             assert!(
@@ -1121,5 +1190,129 @@ mod tests {
         app.ui.settings_search = "timeout".into();
         let h = harness(app, [1240.0, 1000.0]);
         assert!(h.query_by_label("Advanced connection settings").is_some());
+    }
+    #[test]
+    fn mixed_file_selection_keeps_text_and_large_audio() {
+        let directory = tempfile::tempdir().unwrap();
+        let text = directory.path().join("article.txt");
+        let audio = directory.path().join("recording.opus");
+        std::fs::write(&text, "Mačka spi.").unwrap();
+        std::fs::File::create(&audio)
+            .unwrap()
+            .set_len(4 * 1024 * 1024)
+            .unwrap();
+        let mut app = Desktop::new(None, Workspace::default());
+        app.add_sources(&[text, audio]);
+        assert_eq!(app.engine.state.setup.sources.len(), 2);
+        assert!(!app.engine.state.setup.sources[0].media);
+        assert!(app.engine.state.setup.sources[1].media);
+        assert!(app.error.is_empty());
+        assert!(app.notice.contains("2 files"));
+    }
+    #[test]
+    fn successful_files_cannot_hide_another_files_import_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let unsupported = directory.path().join("book.pdf");
+        let text = directory.path().join("article.txt");
+        std::fs::write(&unsupported, "%PDF-1.7").unwrap();
+        std::fs::write(&text, "Mačka spi.").unwrap();
+        let mut app = Desktop::new(None, Workspace::default());
+        app.add_sources(&[unsupported, text]);
+        assert_eq!(app.engine.state.setup.sources.len(), 1);
+        assert!(app.error.contains("book.pdf"));
+        assert_eq!(app.source_import_errors.len(), 1);
+        // Other UI actions may clear the general error banner, but the import
+        // report stays beside the selected files until the next import.
+        app.error.clear();
+        let h = harness(app, [1240.0, 1000.0]);
+        assert!(h.query_by_label("Some files could not be added").is_some());
+    }
+    #[test]
+    fn save_for_later_survives_restart_and_has_a_visible_return_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path().into()).unwrap();
+        let mut app = Desktop::new(Some(store), Workspace::default());
+        app.ui.page = Page::Setup;
+        app.engine.state.setup.pasted_text = "My unfinished project".into();
+        app.engine.state.setup.step = 2;
+        app.save_setup_for_later();
+        assert!(app.ui.page == Page::Projects);
+        assert!(app.error.is_empty());
+        drop(app);
+        let store = Store::open(directory.path().into()).unwrap();
+        let state = store.load().unwrap();
+        assert_eq!(state.setup.pasted_text, "My unfinished project");
+        assert_eq!(state.setup.step, 2);
+        let mut app = Desktop::new(Some(store), state);
+        app.ui.page = Page::Projects;
+        let mut h = harness(app, [1240.0, 1000.0]);
+        click(&mut h, "Continue saved setup");
+        assert!(h.state().ui.page == Page::Setup);
+        assert_eq!(
+            h.state().engine.state.setup.pasted_text,
+            "My unfinished project"
+        );
+    }
+    #[test]
+    fn failed_save_for_later_keeps_the_setup_open() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = Store::open(directory.path().into()).unwrap();
+        let unavailable = directory.path().join("not-a-directory");
+        std::fs::write(&unavailable, "file").unwrap();
+        store.directory = unavailable;
+        let mut app = Desktop::new(Some(store), Workspace::default());
+        app.ui.page = Page::Setup;
+        app.engine.state.setup.pasted_text = "Keep this draft".into();
+        app.save_setup_for_later();
+        assert!(app.ui.page == Page::Setup);
+        assert!(app.error.contains("not saved"));
+        assert_eq!(app.engine.state.setup.pasted_text, "Keep this draft");
+    }
+    #[test]
+    fn selected_profile_can_be_deselected() {
+        let mut app = Desktop::new(None, Workspace::default());
+        app.ui.page = Page::Setup;
+        app.engine.state.setup.step = 1;
+        app.engine.state.setup.settings.profile_name = "Previously chosen profile".into();
+        let mut h = harness(app, [1240.0, 1000.0]);
+        click(&mut h, "Use a saved profile");
+        click(&mut h, "No saved profile");
+        assert!(
+            h.state()
+                .engine
+                .state
+                .setup
+                .settings
+                .profile_name
+                .is_empty()
+        );
+    }
+    #[test]
+    fn setup_help_is_available_by_click_as_well_as_hover() {
+        let mut app = Desktop::new(None, Workspace::default());
+        app.ui.page = Page::Setup;
+        let mut h = harness(app, [1240.0, 1000.0]);
+        click(&mut h, "?");
+        assert!(
+            h.query_by_label_contains(
+                "Recordings have no file-size limit; originals stay unchanged."
+            )
+            .is_some()
+        );
+    }
+    #[test]
+    fn changing_ai_provider_clears_service_bound_values() {
+        let mut app = Desktop::new(None, Workspace::default());
+        app.settings_open = true;
+        app.ui.settings_category = "AI connections".into();
+        app.secret = "OLD_PROVIDER_SECRET".into();
+        app.engine.state.preferences.endpoint = "https://old-provider.example".into();
+        app.engine.state.preferences.model = "old-model".into();
+        let mut h = harness(app, [1400.0, 1200.0]);
+        click(&mut h, "Provider");
+        click(&mut h, "DeepSeek");
+        assert!(h.state().secret.is_empty());
+        assert!(h.state().engine.state.preferences.endpoint.is_empty());
+        assert!(h.state().engine.state.preferences.model.is_empty());
     }
 }

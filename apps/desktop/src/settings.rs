@@ -125,22 +125,27 @@ impl Desktop {
                     "AI connections"=>{
                         ui.label("An API key lets an app send requests to a service for you.");
                         let prefs=&mut self.engine.state.preferences;
+                        let previous_provider = prefs.provider.clone();
                         egui::ComboBox::from_label("Provider").selected_text(&prefs.provider).show_ui(ui,|ui|{
                             for name in ["OpenRouter","DeepSeek","Custom compatible service"]{ui.selectable_value(&mut prefs.provider,name.into(),name);}
                         });
+                        if prefs.provider != previous_provider { self.secret.clear(); prefs.endpoint.clear(); prefs.model.clear(); }
                         section(ui, "Connection details");ui.label("Model");ui.add(text_input(&mut prefs.model).hint_text("Model identifier from your service"));
-                        section(ui, "API key");metadata(ui, "Session only in this prototype");
+                        section(ui, "API key");metadata(ui, "Session only; never saved to project files");
                         ui.add(text_input(&mut self.secret).password(true).hint_text("Paste key"));
-                        ui.small("Keys are never written to project or settings files. OS credential storage will be connected later.");
+                        ui.small("Keys are never written to project or settings files. Enter the key again after reopening the app.");
                         if ui.button("Check setup (no network)").clicked(){
-                            self.notice=if self.secret.trim().is_empty()||prefs.model.trim().is_empty(){"Enter a model and key to complete this example setup.".into()}else{"Setup fields are filled. No service was contacted; the key has not been verified.".into()};
+                            match live::connection(prefs) {
+                                Ok(profile) => { self.notice = if self.secret.trim().is_empty() && !profile["api_key_env"].as_str().is_some_and(|name| std::env::var(name).is_ok_and(|key| !key.trim().is_empty())) { "Enter an API key or set the configured credential environment variable.".into() } else { "Connection settings are valid. No service was contacted; the credential has not been verified.".into() }; }
+                                Err(error) => self.error = error.message,
+                            }
                         }
                         ui.separator();
                         egui::CollapsingHeader::new("Advanced connection settings").default_open(!query.is_empty()).show(ui,|ui|{
-                            ui.label("Endpoint");ui.add(text_input(&mut prefs.endpoint));
+                            ui.label("Endpoint");if ui.add(text_input(&mut prefs.endpoint)).changed() { self.secret.clear(); }
                             ui.add(egui::DragValue::new(&mut prefs.timeout).range(1..=7200).suffix(" seconds timeout"));
                             ui.add(egui::DragValue::new(&mut prefs.retries).range(0..=10).suffix(" retries"));
-                            ui.small("Response modes, reasoning, routing, and secure connection testing belong to the real provider adapter.");
+                            ui.small("Response modes, reasoning, and routing can be selected in a native configuration file.");
                         });
                     }
                     "Browser assistance"=>{
@@ -152,39 +157,51 @@ impl Desktop {
                         if ui.button("Open the walkthrough").clicked(){self.help_open=true;self.ui.help_search="browser".into();}
                     }
                     "Transcription"=>{
-                        ui.label("Local and online transcription are simulated. Imported subtitles will bypass transcription.");
-                        ui.label(if self.engine.state.preferences.local_model_installed{"Example local model: available"}else{"Example local model: not installed"});
+                        ui.label("Local transcription uses whisper.cpp; online transcription uses the configured Groq or HTTP service. Imported subtitles bypass transcription.");
+                        match blitzline_adapters::pipeline::config::load(self.engine.state.preferences.native_config.as_deref().map(std::path::Path::new)) {
+                            Ok(config) => {
+                                let path = config["asr"]["model_file"].as_str().filter(|path|!path.is_empty()).map(std::path::PathBuf::from).unwrap_or_else(||blitzline_adapters::pipeline::config::data_directory().join(format!("resources/models/ggml-{}.bin", config["asr"]["model"].as_str().unwrap_or("small"))));
+                                metadata(ui, format!("Local model: {} · {}", if path.is_file(){"file found"}else{"not installed"}, path.display()));
+                            }
+                            Err(error) => { ui.label(error.message); }
+                        }
+                        section(ui, "Online transcription API key");
+                        ui.add(text_input(&mut self.transcription_secret).password(true).hint_text("Groq or configured HTTP worker key"));
+                        metadata(ui, "Session only, separate from the model key. Only used when Online service is selected. No key is needed for local transcription or imported subtitles.");
                         if ui.button("Open tools & downloads").clicked(){self.ui.page=Page::Resources;self.settings_open=false;}
                     }
                     "Words & review"=>{
                         let prefs=&mut self.engine.state.preferences;
                         ui.strong("Words per request");
                         metadata(ui, "Smaller batches are easier to review in a browser chat.");
-                        slider(ui, egui::Slider::new(&mut prefs.batch_size,1..=20).suffix(" words"));
+                        if slider(ui, egui::Slider::new(&mut prefs.batch_size,1..=20).suffix(" words")).changed() { self.engine.state.setup.settings.batch_size = prefs.batch_size; }
                         ui.separator();
                         egui::CollapsingHeader::new("Advanced review settings").default_open(!query.is_empty()).show(ui,|ui|{
                             ui.add(egui::DragValue::new(&mut prefs.max_chars).range(1000..=100000).suffix(" characters per request"));
                             checkbox(ui, &mut prefs.ambiguity,"Additional ambiguity review");
                             checkbox(ui, &mut prefs.audit,"Final correction-only audit");
-                            ui.small("These advanced review passes are saved as prototype preferences, not executed.");
+                            ui.small("These independent passes use your configured model and may incur additional charges.");
                         });
                     }
                     "Cards & export"=>{
                         ui.label("Sentence cards by default. Optional recall is selected per project.");
                         if ui.button("Open card design editor").clicked(){self.open_design();}
-                        ui.label("The final app will export APKG, TSV, or deliver through AnkiConnect. Prototype exports are clearly marked.");
+                        ui.label("Exports support APKG, TSV with media, and AnkiConnect. Preview cards before exporting.");
                     }
                     "Processing & storage"=>{
-                        ui.label("One example project processes at a time. Waiting projects release the queue.");
-                        if let Some(store)=&self.store{ui.label(format!("Prototype data: {}",store.directory.display()));}
+                        ui.label("One project processes at a time. Waiting projects release the queue.");
+                        if let Some(store)=&self.store{ui.label(format!("Application data: {}",store.directory.display()));}
                         ui.label("Reopening the app pauses unfinished processing. Nothing runs after quitting.");
-                        ui.small("Production per-project storage, configurable concurrency, and executable overrides are planned.");
+                        ui.small("Each project has a locked run folder shared with the CLI. Configure native tools in Tools & downloads.");
                     }
                     _=>{
+                        section(ui, "Command-line tool");
+                        ui.label("Install the bundled Rust CLI in a folder you choose. It runs without Python or this app being open.");
+                        if ui.button("Install command-line tool…").clicked(){self.install_cli();}
                         if ui.button("Import Python settings…").clicked(){self.import_settings();}
                         for line in &self.import_report{ui.label(line);}
                         if ui.button("Copy redacted diagnostics").clicked(){
-                            let text=format!("Blitzline prototype 0.1.0\nOS: {}\nProjects: {}\nEngine: simulation\nAPI requests: disabled\n",std::env::consts::OS,self.engine.state.projects.len());
+                            let text=format!("Blitzline 0.1.0\nOS: {}\nProjects: {}\nEngine: Rust pipeline; explicit examples\nCredentials: session/environment only\n",std::env::consts::OS,self.engine.state.projects.len());
                             ui.ctx().copy_text(text);self.notice="Diagnostics copied without keys, source text, or paths.".into();
                         }
                     }
@@ -227,7 +244,7 @@ impl Desktop {
                         ui.add(text_area(&mut profile.exact_words).desired_rows(3).desired_width(f32::INFINITY));
                         ui.label("Word families — skips dictionary-connected forms, such as the forms of 'be'.");
                         ui.add(text_area(&mut profile.word_families).desired_rows(3).desired_width(f32::INFINITY));
-                        ui.small("Managed prototype lists. Filtering is not connected; no external Blitzer lists are changed.");
+                        ui.small("Managed lists are captured when a new project selects this profile. External Blitzer lists remain unchanged.");
                     });
                     ui.collapsing("Advanced defaults",|ui|{
                         for method in Method::ALL{ui.radio_value(&mut profile.settings.method,method,method.label());}
@@ -245,38 +262,88 @@ impl Desktop {
             "Tools & downloads",
             "Everything a project needs, in one place.",
         );
-        card(ui, |ui| {
-            ui.heading("Local transcription model");
-            ui.label(
-                "Simulation only. No model download or disk space is required to try this screen.",
-            );
-            if let Some(start) = self.downloading {
-                ui.add(
-                    egui::ProgressBar::new((start.elapsed().as_secs_f32() / 3.0).min(1.0))
-                        .text("Simulating download…"),
+        let path = self
+            .engine
+            .state
+            .preferences
+            .native_config
+            .as_deref()
+            .map(std::path::Path::new);
+        match blitzline_adapters::pipeline::config::load(path) {
+            Ok(config) => {
+                for (label, section_name, key) in [
+                    ("Blitzer", "blitzer", "executable"),
+                    ("FFmpeg", "media", "ffmpeg"),
+                    ("FFprobe", "media", "ffprobe"),
+                    ("Local transcription", "asr", "executable"),
+                ] {
+                    card(ui, |ui| {
+                        ui.strong(label);
+                        match blitzline_adapters::pipeline::find_tool(
+                            config[section_name][key].as_str().unwrap_or(""),
+                        ) {
+                            Ok(path) => {
+                                metadata(ui, format!("Installed · {}", path.display()));
+                            }
+                            Err(error) => {
+                                ui.label(error.message);
+                            }
+                        }
+                    });
+                }
+                let model = config["asr"]["model_file"]
+                    .as_str()
+                    .filter(|path| !path.is_empty())
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        blitzline_adapters::pipeline::config::data_directory().join(format!(
+                            "resources/models/ggml-{}.bin",
+                            config["asr"]["model"].as_str().unwrap_or("small")
+                        ))
+                    });
+                section(ui, "Transcription model");
+                metadata(
+                    ui,
+                    format!(
+                        "{} · {}",
+                        if model.is_file() {
+                            "Installed"
+                        } else {
+                            "Not installed"
+                        },
+                        model.display()
+                    ),
                 );
-                if ui.button("Cancel example download").clicked() {
-                    self.downloading = None;
-                }
-            } else if self.engine.state.preferences.local_model_installed {
-                ui.label(RichText::new("Available in the simulation").color(accent(ui)));
-                if ui.button("Simulate removal").clicked() {
-                    self.engine.state.preferences.local_model_installed = false;
-                }
-            } else if primary(ui, "Try the download flow").clicked() {
-                self.downloading = Some(Instant::now());
             }
-        });
-        card(ui, |ui| {
-            ui.heading("Language resources");
-            ui.label("Slovenian · Polish · English");
-            ui.label("Sample vocabulary is bundled. Real dictionaries and compiled Blitzer are not connected.");
-        });
-        card(ui, |ui| {
-            ui.heading("Media tools");
-            ui.label("FFmpeg and FFprobe will be managed by the release package.");
-            ui.small("This skeleton does not read media or generate clips.");
-        });
+            Err(error) => {
+                ui.label(error.message);
+            }
+        }
+        section(ui, "Advanced configuration");
+        ui.label("A native release can bundle these tools and a preconverted model. Text projects need only compiled Blitzer. Python-based tools are rejected.");
+        ui.label("Choose an existing configuration to use its tool paths, service profiles, dictionary settings, and note templates. Relative paths stay relative to that file.");
+        if ui.button("Choose configuration file…").clicked()
+            && let Some(path) = rfd::FileDialog::new()
+                .add_filter("Blitzline configuration", &["toml"])
+                .pick_file()
+        {
+            match blitzline_adapters::pipeline::config::load(Some(&path)) {
+                Ok(_) => {
+                    self.transcription_secret.clear();
+                    self.engine.state.preferences.native_config =
+                        Some(path.to_string_lossy().into());
+                    self.notice = "Configuration selected for new projects.".into();
+                }
+                Err(error) => self.error = error.message,
+            }
+        }
+        if let Some(path) = &self.engine.state.preferences.native_config {
+            metadata(ui, path);
+        }
+        if ui.button("Use default configuration").clicked() {
+            self.transcription_secret.clear();
+            self.engine.state.preferences.native_config = None;
+        }
         if let Some(id) = self.selected()
             && ui.button("Return to project").clicked()
         {
@@ -297,19 +364,19 @@ impl Desktop {
             "Advanced · draft changes stay separate until you apply them.",
         );
         egui::ScrollArea::vertical().id_salt("design_scroll").show(ui,|ui|{
-            ui.label("Available sample fields: Word, Translation, Sentence1.");
+            ui.label("Common note fields: Word, Translation, Sentence1, Sentence2, Comments, Frequency, Sentence1 Audio, Sentence2 Audio.");
             ui.label("Front template");
             ui.add(text_area(&mut self.design_front).code_editor().desired_rows(4).desired_width(f32::INFINITY));
             ui.label("Back template");
             ui.add(text_area(&mut self.design_back).code_editor().desired_rows(4).desired_width(f32::INFINITY));
-            ui.collapsing("Styling (saved only)",|ui|{ui.add(text_area(&mut self.design_css).code_editor().desired_rows(5).desired_width(f32::INFINITY));});
+            ui.collapsing("Anki card styling",|ui|{ui.add(text_area(&mut self.design_css).code_editor().desired_rows(5).desired_width(f32::INFINITY));});
             card(ui,|ui|{
                 ui.strong("Safe text preview");
                 for source in [&self.design_front,&self.design_back] {
                     ui.label(source.replace("{{Word}}","mačka").replace("{{Translation}}","cat").replace("{{Sentence1}}","Mačka spi."));
                     ui.separator();
                 }
-                ui.small("HTML, CSS, and JavaScript are not executed. Full Anki rendering and field/asset management are later integrations.");
+                ui.small("This preview shows text. Anki applies the templates and CSS when importing a deck. Select a native configuration file in Tools & downloads to configure custom fields and assets.");
             });
             ui.horizontal_wrapped(|ui|{
                 if primary(ui,"Apply design").clicked(){
@@ -317,7 +384,7 @@ impl Desktop {
                     else{
                         let prefs=&mut self.engine.state.preferences;
                         prefs.card_front=self.design_front.clone();prefs.card_back=self.design_back.clone();prefs.card_css=self.design_css.clone();
-                        self.design_open=false;self.notice="Prototype design saved. Sample study cards keep their basic layout.".into();
+                        self.design_open=false;self.notice="Card design saved for new projects. Exported decks use this HTML and CSS.".into();
                     }
                 }
                 if ui.button("Cancel").clicked(){self.design_open=false;}

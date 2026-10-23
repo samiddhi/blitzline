@@ -1,3 +1,8 @@
+> Native pipeline update (2026-10-21): normal projects now use the real Rust
+> pipeline through a background worker. The historical prototype checklist below
+> describes the design baseline. Current capabilities and unresolved production
+> work are recorded in [implementation-status.md](implementation-status.md).
+
 # GUI prototype acceptance and implementation status
 
 Specification: [full GUI plan](gui.md).

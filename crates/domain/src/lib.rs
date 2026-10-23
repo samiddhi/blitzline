@@ -1,4 +1,4 @@
-//! UI-independent values and validation for the interactive prototype.
+//! UI-independent desktop values, validation, and native pipeline contracts.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
@@ -73,7 +73,7 @@ impl Status {
     pub fn label(self) -> &'static str {
         match self {
             Self::Queued => "Queued",
-            Self::Running => "Processing example",
+            Self::Running => "Processing",
             Self::Waiting => "Needs your attention",
             Self::Paused => "Paused",
             Self::Failed => "Needs a fix",
@@ -171,6 +171,19 @@ pub struct Receipt {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
+    /// Only projects explicitly created through Try an example may simulate work.
+    #[serde(default)]
+    pub example: bool,
+    #[serde(default)]
+    pub native_run: Option<String>,
+    #[serde(default)]
+    pub native_profile: Option<Profile>,
+    #[serde(default)]
+    pub native_prompt: String,
+    #[serde(default)]
+    pub native_dirty: bool,
+    #[serde(default)]
+    pub native_card_count: Option<usize>,
     pub id: u64,
     pub name: String,
     pub source: Source,
@@ -194,6 +207,9 @@ pub struct Project {
     pub previewed_revision: Option<u64>,
 }
 impl Project {
+    pub fn is_example(&self) -> bool {
+        self.example && self.native_run.is_none()
+    }
     pub fn included(&self) -> usize {
         self.words
             .iter()
@@ -207,6 +223,13 @@ impl Project {
             .count()
     }
     pub fn card_count(&self) -> usize {
+        if self.native_run.is_some() {
+            return if self.native_dirty {
+                0
+            } else {
+                self.native_card_count.unwrap_or(0)
+            };
+        }
         self.included() * if self.settings.recall { 2 } else { 1 }
     }
 }
@@ -235,6 +258,8 @@ impl Default for Profile {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Preferences {
+    #[serde(default)]
+    pub native_config: Option<String>,
     pub appearance: String,
     pub scale: f32,
     pub website: String,
@@ -255,6 +280,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            native_config: None,
             appearance: "System".into(),
             scale: 1.0,
             website: String::new(),
@@ -339,3 +365,5 @@ pub fn parse_reply<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T> {
     };
     serde_json::from_str(body).map_err(|_| Problem("This answer could not be read. Paste the complete answer or copy a follow-up request; you do not need to edit its formatting.".into()))
 }
+
+pub mod pipeline;

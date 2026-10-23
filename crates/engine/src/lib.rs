@@ -1,5 +1,5 @@
-//! Deterministic simulated application service shared by CLI and desktop.
-//! No provider calls, transcription, extraction, or Anki writes happen here.
+//! Desktop view state, queued native commands, and explicit demonstration workflows.
+//! Production processing is implemented by the shared `pipeline` module.
 use blitzline_domain::*;
 use serde::Deserialize;
 use serde_json::json;
@@ -9,8 +9,22 @@ pub trait Repository {
     fn save(&self, state: &Workspace) -> Result<()>;
 }
 
+#[derive(Clone, Debug)]
+pub enum NativeAction {
+    Run,
+    Refresh,
+    Pause,
+    Submit(String),
+    Review(Vec<Word>),
+    Settings(Settings),
+    Text(String),
+    Shorten,
+    Export(String),
+    Clean,
+}
 pub struct Engine {
     pub state: Workspace,
+    pub native_actions: Vec<(u64, NativeAction)>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -47,13 +61,34 @@ impl Engine {
     pub fn new(mut state: Workspace) -> Self {
         // Restart is never authorization to resume external work.
         for p in &mut state.projects {
+            if !p.is_example() && p.native_run.is_none() {
+                p.status = Status::Failed;
+                p.error = Some("This saved preview is not a native run. Duplicate its setup to process the original material; preview answers cannot be used as real results.".into());
+                continue;
+            }
             if matches!(p.status, Status::Running | Status::Queued) {
                 p.status = Status::Paused;
                 p.activity
                     .push("Restored safely. Press Continue when you are ready.".into());
             }
         }
-        Self { state }
+        Self {
+            state,
+            native_actions: vec![],
+        }
+    }
+    fn native(&mut self, id: u64, action: NativeAction) -> Result<bool> {
+        if self.project(id)?.native_run.is_some() {
+            self.native_actions.push((id, action));
+            return Ok(true);
+        }
+        if !self.project(id)?.is_example() {
+            return Err(Problem(
+                "This project has no native run. Duplicate its setup to start real processing."
+                    .into(),
+            ));
+        }
+        Ok(false)
     }
     pub fn project(&self, id: u64) -> Result<&Project> {
         self.state
@@ -105,9 +140,15 @@ impl Engine {
             let transcript = if !source.media && !source.text.is_empty() {
                 source.text.clone()
             } else {
-                sample_text(&source.language).into()
+                String::new()
             };
             self.state.projects.push(Project {
+                example: false,
+                native_run: None,
+                native_profile: None,
+                native_prompt: String::new(),
+                native_dirty: false,
+                native_card_count: None,
                 id,
                 name: source.name.clone(),
                 source,
@@ -124,9 +165,7 @@ impl Engine {
                 exchange_sequence: 0,
                 history: vec![],
                 receipts: vec![],
-                activity: vec![
-                    "Prototype project created. Processing and vocabulary are simulated.".into(),
-                ],
+                activity: vec!["Project created; waiting for native processing.".into()],
                 error: None,
                 archived: false,
                 cleaned: false,
@@ -149,17 +188,21 @@ impl Engine {
             },
             ..Default::default()
         };
-        Ok(self.create(&setup)?[0])
+        let id = self.create(&setup)?[0];
+        let project = self.project_mut(id)?;
+        project.example = true;
+        project.activity = vec![
+            "Example project: bundled vocabulary and simulated services; no real processing."
+                .into(),
+        ];
+        Ok(id)
     }
     /// Advance one bounded unit; caller controls scheduling.
     pub fn tick(&mut self) {
         let installed = self.state.preferences.local_model_installed;
-        let Some(p) = self
-            .state
-            .projects
-            .iter_mut()
-            .find(|p| !p.archived && matches!(p.status, Status::Running | Status::Queued))
-        else {
+        let Some(p) = self.state.projects.iter_mut().find(|p| {
+            p.is_example() && !p.archived && matches!(p.status, Status::Running | Status::Queued)
+        }) else {
             return;
         };
         p.status = Status::Running;
@@ -171,7 +214,7 @@ impl Engine {
                     && p.source.subtitles.is_none()
                 {
                     p.status = Status::Failed;
-                    p.error = Some("This example needs a local transcription model. Open Tools & downloads to simulate installation, then Retry.".into());
+                    p.error = Some("This example needs a local transcription model. Use a text example, or enable the example model in development tests.".into());
                     return;
                 }
                 p.stage = Stage::Transcript;
@@ -256,6 +299,9 @@ impl Engine {
         }
     }
     pub fn pause(&mut self, id: u64) -> Result<()> {
+        if self.native(id, NativeAction::Pause)? {
+            return Ok(());
+        }
         let p = self.project_mut(id)?;
         if matches!(p.status, Status::Running | Status::Queued | Status::Waiting) {
             p.status = Status::Paused;
@@ -263,6 +309,9 @@ impl Engine {
         Ok(())
     }
     pub fn resume(&mut self, id: u64) -> Result<()> {
+        if self.native(id, NativeAction::Run)? {
+            return Ok(());
+        }
         let p = self.project_mut(id)?;
         if p.cleaned {
             return Err(Problem(
@@ -281,6 +330,11 @@ impl Engine {
         Ok(())
     }
     pub fn fail(&mut self, id: u64, message: &str) -> Result<()> {
+        if !self.project(id)?.is_example() {
+            return Err(Problem(
+                "Simulated failures are restricted to explicit examples.".into(),
+            ));
+        }
         let p = self.project_mut(id)?;
         p.status = Status::Failed;
         p.error = Some(message.into());
@@ -288,6 +342,12 @@ impl Engine {
     }
     pub fn prompt(&self, id: u64) -> Result<String> {
         let p = self.project(id)?;
+        if p.native_run.is_some() {
+            return Ok(p.native_prompt.clone());
+        }
+        if !p.is_example() {
+            return Err(Problem("This saved preview has no native exchange. Duplicate its setup to start real processing.".into()));
+        }
         let e = p
             .exchange
             .as_ref()
@@ -317,6 +377,11 @@ impl Engine {
     }
     pub fn sample_reply(&self, id: u64) -> Result<String> {
         let p = self.project(id)?;
+        if !p.is_example() {
+            return Err(Problem(
+                "Sample replies are available only in the example project.".into(),
+            ));
+        }
         let e = p
             .exchange
             .as_ref()
@@ -332,6 +397,12 @@ impl Engine {
         Ok(serde_json::to_string_pretty(&value).unwrap())
     }
     pub fn submit(&mut self, id: u64, raw: &str) -> Result<CheckResult> {
+        if self.native(id, NativeAction::Submit(raw.into()))? {
+            return Ok(CheckResult {
+                accepted: 0,
+                remaining: 0,
+            });
+        }
         let p = self.project_mut(id)?;
         let e = p
             .exchange
@@ -414,6 +485,9 @@ impl Engine {
         }
     }
     pub fn next_exchange(&mut self, id: u64) -> Result<()> {
+        if self.native(id, NativeAction::Run)? {
+            return Ok(());
+        }
         let p = self.project_mut(id)?;
         let e = p
             .exchange
@@ -460,6 +534,8 @@ impl Engine {
             p.stage = Stage::Words;
             p.status = Status::Waiting;
         }
+        let action = NativeAction::Review(p.words.clone());
+        self.native(id, action)?;
         Ok(())
     }
     pub fn edit_word(
@@ -495,9 +571,14 @@ impl Engine {
             };
             p.stage = if pending { Stage::Words } else { Stage::Cards };
         }
+        let action = NativeAction::Review(p.words.clone());
+        self.native(id, action)?;
         Ok(())
     }
     pub fn finish_manual(&mut self, id: u64) -> Result<()> {
+        if self.native(id, NativeAction::Run)? {
+            return Ok(());
+        }
         let p = self.project_mut(id)?;
         if p.stage.index() < Stage::Words.index() {
             return Err(Problem(
@@ -515,6 +596,9 @@ impl Engine {
         Ok(())
     }
     pub fn edit_transcript(&mut self, id: u64, text: String) -> Result<()> {
+        if self.native(id, NativeAction::Text(text.clone()))? {
+            return Ok(());
+        }
         if text.trim().is_empty() {
             return Err(Problem("Keep some text in the transcript.".into()));
         }
@@ -544,6 +628,8 @@ impl Engine {
             }
             p.status = Status::Queued;
         }
+        let action = NativeAction::Settings(p.settings.clone());
+        self.native(id, action)?;
         Ok(())
     }
     pub fn update_settings(&mut self, id: u64, settings: Settings) -> Result<()> {
@@ -574,15 +660,23 @@ impl Engine {
             p.stage = Stage::Words;
             p.status = Status::Paused;
         }
+        let action = NativeAction::Settings(p.settings.clone());
+        self.native(id, action)?;
         Ok(())
     }
     pub fn shorten_request(&mut self, id: u64) -> Result<()> {
+        if self.native(id, NativeAction::Shorten)? {
+            return Ok(());
+        }
         let p = self.project_mut(id)?;
         let Some(e) = &p.exchange else {
             return Err(Problem("No request is active.".into()));
         };
         if e.stage != Stage::Words {
-            return Err(Problem("This text request cannot be split in the prototype. Use direct editing or another method.".into()));
+            return Err(Problem(
+                "This example text request cannot be split. Use direct editing or another method."
+                    .into(),
+            ));
         }
         let pending: Vec<_> = e
             .requested
@@ -603,6 +697,11 @@ impl Engine {
     }
     pub fn preview(&mut self, id: u64) -> Result<()> {
         let p = self.project_mut(id)?;
+        if p.native_dirty {
+            return Err(Problem(
+                "Save your word changes before previewing cards.".into(),
+            ));
+        }
         if !matches!(p.status, Status::Ready | Status::Finished) || !review_valid(p) {
             return Err(Problem(
                 "Finish reviewing the words before previewing cards.".into(),
@@ -614,6 +713,9 @@ impl Engine {
     }
     pub fn export_demo(&mut self, id: u64, format: &str) -> Result<()> {
         let p = self.project_mut(id)?;
+        if p.native_dirty {
+            return Err(Problem("Save your word changes before exporting.".into()));
+        }
         if p.cleaned {
             return Err(Problem("This project has been cleaned.".into()));
         }
@@ -622,8 +724,12 @@ impl Engine {
                 "Preview the current cards before exporting.".into(),
             ));
         }
+        if self.native(id, NativeAction::Export(format.into()))? {
+            return Ok(());
+        }
+        let p = self.project_mut(id)?;
         if format == "Anki" {
-            return Err(Problem("Anki delivery is not connected in this prototype. Choose a simulated deck file or save the sample table.".into()));
+            return Err(Problem("Example projects cannot send cards to Anki. Start a real project to export your own material.".into()));
         }
         p.receipts.push(Receipt {
             label: format!("{format} export (simulation; no Anki package written)"),
@@ -640,7 +746,7 @@ impl Engine {
             return Err(Problem("Preview the completed cards first.".into()));
         }
         let mut value = String::from(
-            "# Prototype sample data — not extracted from your source\nWord\tMeaning\tExample\n",
+            "# Example data — not extracted from your source\nWord\tMeaning\tExample\n",
         );
         for w in p.words.iter().filter(|w| w.decision == Decision::Keep) {
             for (i, field) in [&w.term, &w.meaning, &w.example].into_iter().enumerate() {
@@ -712,3 +818,5 @@ fn sample_words(language: &str) -> Vec<Word> {
         })
         .collect()
 }
+
+pub mod pipeline;

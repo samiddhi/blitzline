@@ -28,7 +28,9 @@ Before porting:
 5. Keep fixtures and provenance in the Rust repository. Later changes to the
    Python working tree do not silently change established expectations.
 
-Baseline capture and reference test execution have not yet been performed.
+Baseline capture is complete. See `../tests/fixtures/reference/provenance.json` and
+[implementation status](implementation-status.md). The reference development
+environment passed all 184 tests. Rust fixtures retain their captured provenance.
 
 ## Compatibility policy
 

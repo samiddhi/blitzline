@@ -1,0 +1,356 @@
+{
+  "raw": "﻿Mačka spi.\r\n\r\nCafé čaka. Mačka spi.",
+  "source_hash": "b7e029d120cad365605a9094fcd1feaca6838d02b928913475787e5aee331464",
+  "cues": [
+    {
+      "id": "cue-000001",
+      "start_ms": null,
+      "end_ms": null,
+      "text": "Mačka spi.",
+      "words": []
+    },
+    {
+      "id": "cue-000002",
+      "start_ms": null,
+      "end_ms": null,
+      "text": "Café čaka. Mačka spi.",
+      "words": []
+    }
+  ],
+  "plaintext": "Mačka spi. Café čaka. Mačka spi.",
+  "rows": [
+    {
+      "term": "mačka",
+      "count": 2,
+      "contexts": [
+        {
+          "text": "Mačka spi.",
+          "highlight_start": 0,
+          "highlight_end": 5
+        }
+      ]
+    },
+    {
+      "term": "čakati",
+      "count": 1,
+      "contexts": [
+        {
+          "text": "Café čaka.",
+          "highlight_start": 5,
+          "highlight_end": 9
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate-77073c4269187f69",
+      "term": "mačka",
+      "source_frequency": 2,
+      "contexts": [
+        {
+          "id": "candidate-77073c4269187f69-context-1",
+          "text": "Mačka spi.",
+          "highlight_start": 0,
+          "highlight_end": 5,
+          "cue_ids": [
+            "cue-000001"
+          ],
+          "start_ms": null,
+          "end_ms": null,
+          "matches": [
+            0,
+            22
+          ],
+          "error": ""
+        }
+      ]
+    },
+    {
+      "id": "candidate-6ef0da7f896ed639",
+      "term": "čakati",
+      "source_frequency": 1,
+      "contexts": [
+        {
+          "id": "candidate-6ef0da7f896ed639-context-1",
+          "text": "Café čaka.",
+          "highlight_start": 5,
+          "highlight_end": 9,
+          "cue_ids": [
+            "cue-000002"
+          ],
+          "start_ms": null,
+          "end_ms": null,
+          "matches": [
+            11
+          ],
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "candidate_id": "candidate-77073c4269187f69",
+      "decision": "keep",
+      "reason": "",
+      "english": "cat",
+      "context_ids": [
+        "candidate-77073c4269187f69-context-1"
+      ],
+      "notes": ""
+    },
+    {
+      "candidate_id": "candidate-6ef0da7f896ed639",
+      "decision": "keep",
+      "reason": "",
+      "english": "wait",
+      "context_ids": [
+        "candidate-6ef0da7f896ed639-context-1"
+      ],
+      "notes": ""
+    }
+  ],
+  "cards": [
+    {
+      "id": "blitzline-0e1fb22ebefb9ba4df2c5899270b356a",
+      "word": "mačka",
+      "english": "cat",
+      "notes": "",
+      "frequency": 2,
+      "contexts": [
+        {
+          "id": "candidate-77073c4269187f69-context-1",
+          "text": "Mačka spi.",
+          "highlight_start": 0,
+          "highlight_end": 5,
+          "cue_ids": [
+            "cue-000001"
+          ],
+          "start_ms": null,
+          "end_ms": null,
+          "matches": [
+            0,
+            22
+          ],
+          "error": ""
+        }
+      ],
+      "source": "sample.txt",
+      "media": [],
+      "source_kind": "text"
+    },
+    {
+      "id": "blitzline-25075d5d2dc8ae085d1927251bdda30a",
+      "word": "čakati",
+      "english": "wait",
+      "notes": "",
+      "frequency": 1,
+      "contexts": [
+        {
+          "id": "candidate-6ef0da7f896ed639-context-1",
+          "text": "Café čaka.",
+          "highlight_start": 5,
+          "highlight_end": 9,
+          "cue_ids": [
+            "cue-000002"
+          ],
+          "start_ms": null,
+          "end_ms": null,
+          "matches": [
+            11
+          ],
+          "error": ""
+        }
+      ],
+      "source": "sample.txt",
+      "media": [],
+      "source_kind": "text"
+    }
+  ],
+  "models": {
+    "legacy": {
+      "definition": {
+        "fields": [
+          {
+            "name": "Word",
+            "source": "Word"
+          },
+          {
+            "name": "English",
+            "source": "English"
+          },
+          {
+            "name": "Sentence1",
+            "source": "Sentence1"
+          },
+          {
+            "name": "Sentence2",
+            "source": "Sentence2"
+          },
+          {
+            "name": "Notes",
+            "source": "Notes"
+          },
+          {
+            "name": "Frequency",
+            "source": "Frequency"
+          },
+          {
+            "name": "Media1",
+            "source": "Media1"
+          },
+          {
+            "name": "Media2",
+            "source": "Media2"
+          },
+          {
+            "name": "Source",
+            "source": "Source"
+          },
+          {
+            "name": "BlitzlineId",
+            "source": "BlitzlineId"
+          }
+        ],
+        "templates": [
+          {
+            "name": "Vocabulary",
+            "front": "{{Word}}<br>{{Sentence1}}<br>{{Media1}}",
+            "back": "{{FrontSide}}<hr id=answer>{{English}}<br>{{Sentence2}}<br>{{Media2}}<br>{{Notes}}<br><small>{{Frequency}} occurrences · {{Source}}</small>"
+          }
+        ],
+        "css": ".card { font-family: sans-serif; font-size: 22px; text-align: left; } b { color: #3972bb; } small { font-size: 12px; }",
+        "sort_field": 0
+      },
+      "model_id": 1182257297,
+      "fields": {
+        "Word": "mačka",
+        "English": "cat",
+        "Sentence1": "<b>Mačka</b> spi.",
+        "Sentence2": "",
+        "Notes": "",
+        "Frequency": "2",
+        "Media1": "",
+        "Media2": "",
+        "Source": "sample.txt",
+        "BlitzlineId": "blitzline-0e1fb22ebefb9ba4df2c5899270b356a"
+      },
+      "deck_id": 495983779
+    },
+    "blitzer": {
+      "definition": {
+        "fields": [
+          {
+            "name": "Word",
+            "source": "Word"
+          },
+          {
+            "name": "Translation",
+            "source": "Translation"
+          },
+          {
+            "name": "Sentence1",
+            "source": "Sentence1"
+          },
+          {
+            "name": "Sentence2",
+            "source": "Sentence2"
+          },
+          {
+            "name": "Comments",
+            "source": "Comments"
+          },
+          {
+            "name": "Frequency",
+            "source": "Frequency"
+          },
+          {
+            "name": "Sentence1 Audio",
+            "source": "Sentence1 Audio"
+          },
+          {
+            "name": "Sentence2 Audio",
+            "source": "Sentence2 Audio"
+          },
+          {
+            "name": "Word Audio",
+            "source": "Word Audio"
+          },
+          {
+            "name": "Image",
+            "source": "Image"
+          },
+          {
+            "name": "FillForTwoWay",
+            "source": "FillForTwoWay"
+          }
+        ],
+        "templates": [
+          {
+            "name": "Recall",
+            "front": "{{#FillForTwoWay}}\n\n{{Translation}}\n<br>\n\n{{type:Word}}\n\n{{/FillForTwoWay}}",
+            "back": "{{FrontSide}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> \n<hr style=\"margin: 1% 25% 1% 25%\">\n\n{{#Sentence1}}\n  {{Sentence1}} <br> {{Sentence1 Audio}}\n{{/Sentence1}}\n<br>\n\n{{#Sentence2}}\n  {{Sentence2}} <br> {{Sentence2 Audio}}\n{{/Sentence2}}\n\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}\n\n"
+          },
+          {
+            "name": "Sentence1",
+            "front": "{{#Sentence1}}\n\n<div id=\"sentence\">{{Sentence1}}</div>\n<br>{{Sentence1 Audio}}\n\n{{/Sentence1}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>",
+            "back": "{{FrontSide}}\n<br>\n{{Sentence1}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}"
+          },
+          {
+            "name": "Sentence2",
+            "front": "{{#Sentence2}}\n\n<div id=\"sentence\">{{Sentence2}}</div>\n<br>{{Sentence2 Audio}}\n\n{{/Sentence2}}\n\n\n\n\n<script>\nvar el = document.getElementById(\"sentence\");\nif (el) {\nvar fullSentence = el.innerHTML;\n\nfunction showBoldOnly() {\n  var bolds = [...el.querySelectorAll(\"b\")];\n\n  if (!bolds.length) { showFullSentence(); return; }\n  el.innerHTML = bolds\n    .map((b, i) =>\n      `${i ? ' <span class=\"separator\">/</span> ' : ''}${b.outerHTML}`\n    )\n    .join('');\n\n  el.classList.remove(\"expanded\");\n}\n\nfunction showFullSentence() {\n  el.innerHTML = fullSentence;\n  el.classList.add(\"expanded\");\n}\n\nel.addEventListener(\"click\", () => {\n  if (el.classList.contains(\"expanded\")) {\n    showBoldOnly();\n  } else {\n    showFullSentence();\n  }\n});\n\nshowBoldOnly();\n}\n</script>\n",
+            "back": "{{FrontSide}}\n<br>\n{{Sentence2}}\n\n<hr id=answer>\n\n<b>{{Word}}</b> {{Word Audio}}\n<br>\n\n{{Translation}}\n\n{{#Comments}}\n\t<div style=\"font-size:.5em; margin-top:0.5em;\">\n\t\t{{Comments}}\n\t</div>\n{{/Comments}}"
+          }
+        ],
+        "css": ".card {\n    font-family: Avenir Next;\n    font-size: 35px;\n    text-align: center;\n    color: black;\n    background-color: white;\n}\n\nb {\n\tcolor: black;\n\topacity: 35%;\n\tfont-weight: bold;\n}\n\n@media screen and (max-device-width: 600px) {\n    b {\n        color: lightblue;\n        opacity: 100%;\n        font-style: italic;\n    }\n}",
+        "sort_field": 0
+      },
+      "model_id": 362603794,
+      "fields": {
+        "Word": "mačka",
+        "Translation": "cat",
+        "Sentence1": "<b>Mačka</b> spi.",
+        "Sentence2": "",
+        "Comments": "",
+        "Frequency": "2",
+        "Sentence1 Audio": "",
+        "Sentence2 Audio": "",
+        "Word Audio": "",
+        "Image": "",
+        "FillForTwoWay": ""
+      },
+      "deck_id": 495983779
+    }
+  },
+  "identity_cases": [
+    {
+      "value": "mačka",
+      "digest": "77073c4269187f69b046fe4b8293928ea3756ff0bceadcdcfb2ebc3c8b4ea746"
+    },
+    {
+      "value": "é",
+      "digest": "f2886017e9c7abacf804b54d64787dce2b611c9544ba21f3affdd126a6e50086"
+    },
+    {
+      "value": "é",
+      "digest": "3d68ce21f2899a475713cdbe7562ba9bdb6b1dfde8af1f221bdff4a0935b53b2"
+    },
+    {
+      "value": [
+        "text",
+        "hash",
+        "slv",
+        "mačka"
+      ],
+      "digest": "0b804709ef965c0fc21aaeb671cf079e006b16985f3634a42ae70c956ac5bedf"
+    },
+    {
+      "value": {
+        "z": "🦊",
+        "a": "<tag>"
+      },
+      "digest": "2d5ce7500e2d9e629b4474df668dc25096fd34a77341106becb617c5354c541f"
+    }
+  ]
+}

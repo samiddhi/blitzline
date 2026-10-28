@@ -15,7 +15,7 @@ fn fixture() -> Value {
 const FAKE: &str = r#"
 import json, os, sys, time
 out, mode = sys.argv[1], sys.argv[2]
-stdin = sys.stdin.read()
+stdin = sys.stdin.buffer.read().decode("utf-8")
 n = len([f for f in os.listdir(out) if f.startswith("call")])
 open(f"{out}/call{n}.json", "w").write(json.dumps({"argv": sys.argv[3:], "env": sorted(os.environ), "stdin": stdin, "cwd": os.getcwd()}))
 if mode == "exit":

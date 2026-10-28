@@ -248,8 +248,10 @@ fn settings(base: Value, project: &Project, preferences: &Preferences) -> data::
         value["asr"]["model"] = json!(s.model);
     }
     if s.local_transcription {
-        value["asr"]["backend"] = json!("local");
-    } else if value["asr"]["backend"] == "local" {
+        if !config::is_local_worker(&value["asr"]) {
+            value["asr"]["backend"] = json!("local");
+        }
+    } else if value["asr"]["backend"] == "local" || config::is_local_worker(&value["asr"]) {
         value["asr"]["backend"] = json!("groq");
     }
     if preferences.use_claude_cli || !preferences.model.trim().is_empty() {
@@ -401,7 +403,10 @@ fn execute_with_credentials(
                 || p.job.settings["asr"]["relisten"] == true);
         if uses_asr && matches!(action, NativeAction::Run | NativeAction::Shorten) {
             let saved = &p.job.settings["asr"];
-            if project.settings.local_transcription && saved["backend"] != "local" {
+            if project.settings.local_transcription
+                && saved["backend"] != "local"
+                && !config::is_local_worker(saved)
+            {
                 return Err(data::Error::input(
                     "This saved run uses online transcription but On this computer is selected. Apply Project settings before continuing; no recording was uploaded.",
                 ));
@@ -965,6 +970,27 @@ mod tests {
         settings.recall = true;
         project = apply(project, NativeAction::Settings(settings));
         assert_eq!(project.card_count(), 4);
+    }
+    #[test]
+    fn local_transcription_keeps_a_loopback_worker() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = project(directory.path());
+        let mut base = config::defaults();
+        base["asr"]["backend"] = json!("local-worker");
+        base["asr"]["endpoint"] = json!("http://127.0.0.1:8765/transcribe");
+        let actual = settings(base, &project, &Preferences::default()).unwrap();
+        assert_eq!(actual["asr"]["backend"], "local-worker");
+    }
+    #[test]
+    fn local_transcription_keeps_an_http_worker_with_a_command() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = project(directory.path());
+        let mut base = config::defaults();
+        base["asr"]["backend"] = json!("http");
+        base["asr"]["endpoint"] = json!("http://127.0.0.1:8765/transcribe");
+        base["asr"]["worker_command"] = json!(["python3", "asr_worker.py"]);
+        let actual = settings(base, &project, &Preferences::default()).unwrap();
+        assert_eq!(actual["asr"]["backend"], "http");
     }
     #[test]
     fn local_transcription_choice_overrides_a_remote_configuration() {

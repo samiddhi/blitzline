@@ -187,7 +187,8 @@ impl Desktop {
                         if ui.button("Open the walkthrough").clicked(){self.help_open=true;self.ui.help_search="browser".into();}
                     }
                     "Transcription"=>{
-                        ui.label("Local transcription uses whisper.cpp; online transcription uses the configured Groq or HTTP service. Imported subtitles bypass transcription.");
+                        ui.label("Local transcription runs on this computer; online transcription uses the configured Groq or HTTP service. Imported subtitles bypass transcription.");
+                        metadata(ui, "To use another Whisper model or a service you run yourself, set asr.backend=\"http\", asr.endpoint and asr.worker_command in the configuration file (see docs/asr-worker-protocol.md).");
                         match blitzline_adapters::pipeline::config::load(self.engine.state.preferences.native_config.as_deref().map(std::path::Path::new)) {
                             Ok(config) => {
                                 let path = config["asr"]["model_file"].as_str().filter(|path|!path.is_empty()).map(std::path::PathBuf::from).unwrap_or_else(||blitzline_adapters::pipeline::config::data_directory().join(format!("resources/models/ggml-{}.bin", config["asr"]["model"].as_str().unwrap_or("small"))));
@@ -332,6 +333,12 @@ impl Desktop {
                 ] {
                     card(ui, |ui| {
                         ui.strong(label);
+                        if section_name == "asr" && blitzline_adapters::pipeline::config::is_local_worker(&config["asr"]) {
+                            let url = config["asr"]["endpoint"].as_str().unwrap_or("");
+                            let reachable = blitzline_adapters::pipeline::config::local_worker_address(&config["asr"]).ok().and_then(|a| std::net::ToSocketAddrs::to_socket_addrs(&a).ok()?.next()).is_some_and(|a| std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_millis(300)).is_ok());
+                            metadata(ui, format!("ASR worker · {url} · {}", if reachable { "running" } else { "not running; start it first" }));
+                            return;
+                        }
                         match blitzline_adapters::pipeline::find_tool(
                             config[section_name][key].as_str().unwrap_or(""),
                         ) {
@@ -354,6 +361,7 @@ impl Desktop {
                             config["asr"]["model"].as_str().unwrap_or("small")
                         ))
                     });
+                if !blitzline_adapters::pipeline::config::is_local_worker(&config["asr"]) {
                 section(ui, "Transcription model");
                 metadata(
                     ui,
@@ -367,6 +375,7 @@ impl Desktop {
                         model.display()
                     ),
                 );
+                }
             }
             Err(error) => {
                 ui.label(error.message);

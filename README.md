@@ -102,7 +102,7 @@ blitzline export recording-run --format anki
 blitzline check --text-only
 ```
 
-Transcription supports native whisper.cpp, Groq, custom HTTP workers, SRT, and
+Transcription supports native whisper.cpp, Groq, any HTTP ASR service you run or host ([protocol](docs/asr-worker-protocol.md)), SRT, and
 ASR JSON. Optional proofreading, translation, second-ASR evidence for uncertain
 corrections, ambiguity review, and correction-only audit share saved tasks and
 validators. Text stays untimed and never requires media tools.

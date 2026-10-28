@@ -24,7 +24,7 @@ pub fn data_directory() -> PathBuf {
 pub fn defaults() -> Value {
     json!({
         "run":{"output_dir":data_directory().join("runs"),"proofread":false,"translate":false,"allow_partial":false,"method":"auto","proofread_method":"auto","translate_method":"auto","review_method":"auto"},
-        "asr":{"backend":"local","executable":"whisper-cli","model":"small","model_file":"","device":"cpu","compute_type":"int8","language":"","timeout":7200,"max_cue_ms":8000,"line_length":42,"pause_ms":800,"max_chars_per_second":25,"relisten":false,"endpoint":"","api_key_env":"","remote_compute_type":"float16","chunk_seconds":600,"retries":2,"options":{}},
+        "asr":{"backend":"local","executable":"whisper-cli","model":"small","model_file":"","device":"cpu","compute_type":"int8","language":"","timeout":7200,"max_cue_ms":8000,"line_length":42,"pause_ms":800,"max_chars_per_second":25,"relisten":false,"endpoint":"","worker_command":[],"api_key_env":"","remote_compute_type":"float16","chunk_seconds":600,"retries":2,"options":{}},
         "blitzer":{"executable":"bltzr","config":"","plugins_dir":"","known_file":"","skip_exact_words_file":"","skip_word_families_file":"","anki_collection":"","anki_deck":"","anki_fields":[],"no_config":false,"timeout":120},
         "llm":{"default":"","proofread":"","translate":"","review":"","ambiguity_review":"","audit_review":"","form_lexicon":"","batch_size":20,"ambiguity_batch_size":5,"max_chars":24000,"repair_attempts":2},
         "profiles":{},"decks":{},
@@ -266,8 +266,17 @@ pub fn validate(s: &Value) -> Result<()> {
             }
         }
     }
+    if is_local_worker(&s["asr"]) {
+        local_worker_address(&s["asr"])?;
+    }
+    if !s["asr"]["worker_command"]
+        .as_array()
+        .is_some_and(|c| c.iter().all(|a| a.as_str().is_some_and(|a| !a.is_empty())))
+    {
+        return Err(Error::input("asr.worker_command must be a list of non-empty strings"));
+    }
     for (section, key, choices) in [
-        ("asr", "backend", vec!["local", "http", "groq"]),
+        ("asr", "backend", vec!["local", "local-worker", "http", "groq"]),
         ("media", "kind", vec!["audio", "video"]),
         ("export", "format", vec!["tsv", "apkg", "anki"]),
         ("export", "existing", vec!["skip", "update"]),
@@ -393,6 +402,21 @@ pub fn validate(s: &Value) -> Result<()> {
     }
     Ok(())
 }
+/// True when Blitzline launches the ASR service itself: the `http` backend with `asr.worker_command` set.
+/// `local-worker` is the deprecated spelling of `http`; it is always treated as a launchable worker.
+pub fn is_local_worker(asr: &Value) -> bool {
+    asr["backend"] == "local-worker"
+        || (asr["backend"] == "http" && asr["worker_command"].as_array().is_some_and(|c| !c.is_empty()))
+}
+/// The `host:port` of a loopback worker endpoint, or an error if it is missing or not loopback.
+pub fn local_worker_address(asr: &Value) -> Result<String> {
+    let url = asr["endpoint"]
+        .as_str()
+        .and_then(|u| reqwest::Url::parse(u).ok())
+        .filter(|u| u.scheme() == "http" && matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
+        .ok_or_else(|| Error::input("Set asr.endpoint to an http URL on this computer (localhost, 127.0.0.1 or [::1]) so Blitzline can launch the ASR worker"))?;
+    Ok(format!("{}:{}", url.host_str().unwrap_or("127.0.0.1"), url.port_or_known_default().unwrap_or(80)))
+}
 pub fn validate_url(url: &str) -> Result<()> {
     let u = reqwest::Url::parse(url).map_err(|_| Error::input("Invalid HTTP service URL"))?;
     if !["http", "https"].contains(&u.scheme())
@@ -500,4 +524,29 @@ pub fn export_settings(settings: &Value, language: &str) -> Result<Value> {
     }
     notes::definition(&export)?;
     Ok(export)
+}
+#[cfg(test)]
+mod worker_tests {
+    use super::*;
+    #[test]
+    fn http_with_a_command_is_a_launched_worker_and_must_be_loopback() {
+        let mut s = defaults();
+        s["asr"]["backend"] = json!("http");
+        s["asr"]["endpoint"] = json!("https://asr.example/transcribe");
+        assert!(!is_local_worker(&s["asr"]));
+        validate(&s).unwrap();
+        s["asr"]["worker_command"] = json!(["python3", "w.py"]);
+        assert!(is_local_worker(&s["asr"]));
+        assert!(validate(&s).is_err());
+        s["asr"]["endpoint"] = json!("http://127.0.0.1:8765/transcribe");
+        validate(&s).unwrap();
+    }
+    #[test]
+    fn the_old_local_worker_name_still_validates() {
+        let mut s = defaults();
+        s["asr"]["backend"] = json!("local-worker");
+        s["asr"]["endpoint"] = json!("http://localhost:8765/transcribe");
+        assert!(is_local_worker(&s["asr"]));
+        validate(&s).unwrap();
+    }
 }

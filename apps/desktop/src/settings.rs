@@ -232,6 +232,7 @@ impl Desktop {
                 ..Default::default()
             });
         }
+        let mut delete = None;
         for (i, profile) in self.engine.state.profiles.iter_mut().enumerate() {
             ui.push_id(i,|ui|{
                 card(ui,|ui|{
@@ -250,9 +251,25 @@ impl Desktop {
                         for method in Method::ALL{ui.radio_value(&mut profile.settings.method,method,method.label());}
                         stage_methods(ui,&mut profile.settings);
                     });
+                    let ask = egui::Id::new(("delete_profile", i));
+                    if ui.ctx().data(|d| d.get_temp::<bool>(ask)).unwrap_or(false) {
+                        ui.horizontal(|ui|{
+                            ui.label(format!("Delete profile '{}'? Existing projects keep their settings.", profile.name));
+                            if ui.button("Delete").clicked() { delete = Some(i); }
+                            if ui.button("Cancel").clicked() { ui.ctx().data_mut(|d| d.insert_temp(ask, false)); }
+                        });
+                    } else if ui.button("Delete profile").clicked() {
+                        ui.ctx().data_mut(|d| d.insert_temp(ask, true));
+                    }
                 });
             });
             ui.add_space(12.0);
+        }
+        if let Some(i) = delete {
+            self.engine.state.profiles.remove(i);
+            // The confirmation flags are keyed by position, so clear them rather than let one slide onto the next profile.
+            for n in 0..=self.engine.state.profiles.len() { ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(("delete_profile", n)), false)); }
+            self.save_now();
         }
         ui.label("Changes apply to new projects that select this profile. Existing projects keep their saved settings.");
     }

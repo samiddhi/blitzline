@@ -48,8 +48,9 @@ fn main() -> eframe::Result {
                 [1240.0, 860.0]
             })
             .with_min_inner_size([800.0, 600.0]),
-        // Vsync waits on Wayland frame callbacks, which stop while the window is on another workspace.
-        vsync: false,
+        // On Linux, vsync waits on Wayland frame callbacks, which stop while the window is on another workspace.
+        // macOS and Windows have no such stall, so they keep vsync.
+        vsync: !cfg!(target_os = "linux"),
         ..Default::default()
     };
     eframe::run_native(

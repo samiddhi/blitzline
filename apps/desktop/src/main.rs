@@ -48,6 +48,8 @@ fn main() -> eframe::Result {
                 [1240.0, 860.0]
             })
             .with_min_inner_size([800.0, 600.0]),
+        // Vsync waits on Wayland frame callbacks, which stop while the window is on another workspace.
+        vsync: false,
         ..Default::default()
     };
     eframe::run_native(

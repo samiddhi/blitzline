@@ -305,7 +305,10 @@ impl Desktop {
         if let Some(i) = delete {
             self.engine.state.profiles.remove(i);
             // The confirmation flags are keyed by position, so clear them rather than let one slide onto the next profile.
-            for n in 0..=self.engine.state.profiles.len() { ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(("delete_profile", n)), false)); }
+            for n in 0..=self.engine.state.profiles.len() {
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(egui::Id::new(("delete_profile", n)), false));
+            }
             self.save_now();
         }
         ui.label("Changes apply to new projects that select this profile. Existing projects keep their saved settings.");
@@ -333,10 +336,36 @@ impl Desktop {
                 ] {
                     card(ui, |ui| {
                         ui.strong(label);
-                        if section_name == "asr" && blitzline_adapters::pipeline::config::is_local_worker(&config["asr"]) {
+                        if section_name == "asr"
+                            && blitzline_adapters::pipeline::config::is_local_worker(&config["asr"])
+                        {
                             let url = config["asr"]["endpoint"].as_str().unwrap_or("");
-                            let reachable = blitzline_adapters::pipeline::config::local_worker_address(&config["asr"]).ok().and_then(|a| std::net::ToSocketAddrs::to_socket_addrs(&a).ok()?.next()).is_some_and(|a| std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_millis(300)).is_ok());
-                            metadata(ui, format!("ASR worker · {url} · {}", if reachable { "running" } else { "not running; start it first" }));
+                            let reachable =
+                                blitzline_adapters::pipeline::config::local_worker_address(
+                                    &config["asr"],
+                                )
+                                .ok()
+                                .and_then(|a| {
+                                    std::net::ToSocketAddrs::to_socket_addrs(&a).ok()?.next()
+                                })
+                                .is_some_and(|a| {
+                                    std::net::TcpStream::connect_timeout(
+                                        &a,
+                                        std::time::Duration::from_millis(300),
+                                    )
+                                    .is_ok()
+                                });
+                            metadata(
+                                ui,
+                                format!(
+                                    "ASR worker · {url} · {}",
+                                    if reachable {
+                                        "running"
+                                    } else {
+                                        "not running; start it first"
+                                    }
+                                ),
+                            );
                             return;
                         }
                         match blitzline_adapters::pipeline::find_tool(
@@ -362,19 +391,19 @@ impl Desktop {
                         ))
                     });
                 if !blitzline_adapters::pipeline::config::is_local_worker(&config["asr"]) {
-                section(ui, "Transcription model");
-                metadata(
-                    ui,
-                    format!(
-                        "{} · {}",
-                        if model.is_file() {
-                            "Installed"
-                        } else {
-                            "Not installed"
-                        },
-                        model.display()
-                    ),
-                );
+                    section(ui, "Transcription model");
+                    metadata(
+                        ui,
+                        format!(
+                            "{} · {}",
+                            if model.is_file() {
+                                "Installed"
+                            } else {
+                                "Not installed"
+                            },
+                            model.display()
+                        ),
+                    );
                 }
             }
             Err(error) => {

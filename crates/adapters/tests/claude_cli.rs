@@ -45,20 +45,33 @@ impl Fake {
             .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("call"))
             .collect();
         files.sort();
-        files.iter().map(|p| serde_json::from_slice(&fs::read(p).unwrap()).unwrap()).collect()
+        files
+            .iter()
+            .map(|p| serde_json::from_slice(&fs::read(p).unwrap()).unwrap())
+            .collect()
     }
 }
 fn setup(mode: &str, timeout: u64) -> (Fake, Pipeline<Runtime>) {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join("out")).unwrap();
     fs::write(dir.path().join("fake.py"), FAKE).unwrap();
-    fs::write(dir.path().join("out/decisions.json"), fixture()["decisions"].to_string()).unwrap();
+    fs::write(
+        dir.path().join("out/decisions.json"),
+        fixture()["decisions"].to_string(),
+    )
+    .unwrap();
     let root = dir.path();
     let source = root.join("sample.txt");
     fs::write(&source, fixture()["raw"].as_str().unwrap()).unwrap();
     let vocab = root.join("vocabulary.json");
     fs::write(&vocab, fixture()["rows"].to_string()).unwrap();
-    let command = json!(["python3", "-I", root.join("fake.py"), root.join("out"), mode]);
+    let command = json!([
+        "python3",
+        "-I",
+        root.join("fake.py"),
+        root.join("out"),
+        mode
+    ]);
     let raw = json!({"profiles":{"cli":{"provider":"claude-cli","model":"sonnet","command":command,"timeout":timeout}},"llm":{"default":"cli"},"run":{"method":"api"}});
     let mut p = rt::start(
         &root.join("run"),
@@ -85,8 +98,21 @@ fn cli_repairs_bad_items_with_the_transcript_on_stdin_only_and_a_clean_environme
     assert_eq!(calls.len(), 2);
     for call in &calls {
         let argv = call["argv"].as_array().unwrap();
-        let joined = argv.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
-        for flag in ["-p", "--tools", "--strict-mcp-config", "--setting-sources", "--disable-slash-commands", "--no-session-persistence", "--json-schema", "--model sonnet"] {
+        let joined = argv
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+        for flag in [
+            "-p",
+            "--tools",
+            "--strict-mcp-config",
+            "--setting-sources",
+            "--disable-slash-commands",
+            "--no-session-persistence",
+            "--json-schema",
+            "--model sonnet",
+        ] {
             assert!(joined.contains(flag), "missing {flag}");
         }
         assert!(!argv.iter().any(|a| a == "--bare"));
@@ -95,8 +121,16 @@ fn cli_repairs_bad_items_with_the_transcript_on_stdin_only_and_a_clean_environme
         let term = data["candidates"][0]["term"].as_str().unwrap();
         assert!(!joined.contains(term));
         let env = call["env"].as_array().unwrap();
-        assert!(!env.iter().any(|k| k.as_str().unwrap().starts_with("ANTHROPIC_")));
-        assert_eq!(Path::new(call["cwd"].as_str().unwrap()).canonicalize().unwrap(), std::env::temp_dir().canonicalize().unwrap());
+        assert!(
+            !env.iter()
+                .any(|k| k.as_str().unwrap().starts_with("ANTHROPIC_"))
+        );
+        assert_eq!(
+            Path::new(call["cwd"].as_str().unwrap())
+                .canonicalize()
+                .unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
     }
     assert!(!calls[0]["argv"].to_string().contains("--effort"));
     let second: Value = serde_json::from_str(calls[1]["stdin"].as_str().unwrap()).unwrap();
@@ -135,13 +169,21 @@ fn cli_times_out_and_can_be_cancelled() {
 
 #[test]
 fn claude_cli_profile_validation() {
-    let ok = |profile: Value| config::merge(json!({"profiles":{"c":profile}}), Path::new(".")).map(|s| s["profiles"]["c"].clone());
+    let ok = |profile: Value| {
+        config::merge(json!({"profiles":{"c":profile}}), Path::new("."))
+            .map(|s| s["profiles"]["c"].clone())
+    };
     let profile = ok(json!({"provider":"claude-cli","model":"opus"})).unwrap();
     assert_eq!(profile["command"], json!(["claude"]));
     assert!(ok(json!({"provider":"claude-cli","model":"gpt-4"})).is_err());
     assert!(ok(json!({"provider":"claude-cli","model":"haiku","command":[]})).is_err());
     // Other providers are unchanged, so their cached answers stay valid.
-    assert!(ok(json!({"provider":"openrouter","model":"m"})).unwrap().get("command").is_none());
+    assert!(
+        ok(json!({"provider":"openrouter","model":"m"}))
+            .unwrap()
+            .get("command")
+            .is_none()
+    );
 }
 
 #[test]
@@ -155,7 +197,13 @@ fn runs_saved_before_the_anki_settings_still_validate() {
 
 #[test]
 fn effort_is_passed_only_when_set_and_must_be_valid() {
-    let ok = |effort: &str| config::merge(json!({"profiles":{"c":{"provider":"claude-cli","model":"haiku","effort":effort}}}), Path::new(".")).map(|s| s["profiles"]["c"].clone());
+    let ok = |effort: &str| {
+        config::merge(
+            json!({"profiles":{"c":{"provider":"claude-cli","model":"haiku","effort":effort}}}),
+            Path::new("."),
+        )
+        .map(|s| s["profiles"]["c"].clone())
+    };
     assert_eq!(ok("low").unwrap()["effort"], "low");
     assert!(ok("").is_ok());
     assert!(ok("turbo").is_err());

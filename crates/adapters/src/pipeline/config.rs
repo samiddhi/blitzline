@@ -273,10 +273,16 @@ pub fn validate(s: &Value) -> Result<()> {
         .as_array()
         .is_some_and(|c| c.iter().all(|a| a.as_str().is_some_and(|a| !a.is_empty())))
     {
-        return Err(Error::input("asr.worker_command must be a list of non-empty strings"));
+        return Err(Error::input(
+            "asr.worker_command must be a list of non-empty strings",
+        ));
     }
     for (section, key, choices) in [
-        ("asr", "backend", vec!["local", "local-worker", "http", "groq"]),
+        (
+            "asr",
+            "backend",
+            vec!["local", "local-worker", "http", "groq"],
+        ),
         ("media", "kind", vec!["audio", "video"]),
         ("export", "format", vec!["tsv", "apkg", "anki"]),
         ("export", "existing", vec!["skip", "update"]),
@@ -343,13 +349,17 @@ pub fn validate(s: &Value) -> Result<()> {
             }
             let effort = p["effort"].as_str().unwrap_or("");
             if !effort.is_empty() && !CLAUDE_CLI_EFFORTS.contains(&effort) {
-                return Err(Error::input(format!("Profile {name} effort must be one of {}", CLAUDE_CLI_EFFORTS.join(", "))));
+                return Err(Error::input(format!(
+                    "Profile {name} effort must be one of {}",
+                    CLAUDE_CLI_EFFORTS.join(", ")
+                )));
             }
-            if !p["command"]
-                .as_array()
-                .is_some_and(|c| !c.is_empty() && c.iter().all(|a| a.as_str().is_some_and(|a| !a.is_empty())))
-            {
-                return Err(Error::input(format!("Profile {name} command must be a list of non-empty strings")));
+            if !p["command"].as_array().is_some_and(|c| {
+                !c.is_empty() && c.iter().all(|a| a.as_str().is_some_and(|a| !a.is_empty()))
+            }) {
+                return Err(Error::input(format!(
+                    "Profile {name} command must be a list of non-empty strings"
+                )));
             }
         } else {
             validate_url(p["base_url"].as_str().unwrap_or(""))?;
@@ -406,7 +416,10 @@ pub fn validate(s: &Value) -> Result<()> {
 /// `local-worker` is the deprecated spelling of `http`; it is always treated as a launchable worker.
 pub fn is_local_worker(asr: &Value) -> bool {
     asr["backend"] == "local-worker"
-        || (asr["backend"] == "http" && asr["worker_command"].as_array().is_some_and(|c| !c.is_empty()))
+        || (asr["backend"] == "http"
+            && asr["worker_command"]
+                .as_array()
+                .is_some_and(|c| !c.is_empty()))
 }
 /// The `host:port` of a loopback worker endpoint, or an error if it is missing or not loopback.
 pub fn local_worker_address(asr: &Value) -> Result<String> {
@@ -415,7 +428,11 @@ pub fn local_worker_address(asr: &Value) -> Result<String> {
         .and_then(|u| reqwest::Url::parse(u).ok())
         .filter(|u| u.scheme() == "http" && matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
         .ok_or_else(|| Error::input("Set asr.endpoint to an http URL on this computer (localhost, 127.0.0.1 or [::1]) so Blitzline can launch the ASR worker"))?;
-    Ok(format!("{}:{}", url.host_str().unwrap_or("127.0.0.1"), url.port_or_known_default().unwrap_or(80)))
+    Ok(format!(
+        "{}:{}",
+        url.host_str().unwrap_or("127.0.0.1"),
+        url.port_or_known_default().unwrap_or(80)
+    ))
 }
 pub fn validate_url(url: &str) -> Result<()> {
     let u = reqwest::Url::parse(url).map_err(|_| Error::input("Invalid HTTP service URL"))?;

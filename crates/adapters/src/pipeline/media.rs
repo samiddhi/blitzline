@@ -551,7 +551,10 @@ pub fn clips(
 }
 /// Make sure the ASR worker answers, launching `asr.worker_command` if it does not.
 fn start_worker(rt: &Runtime, asr: &Value) -> Result<()> {
-    use std::{net::{TcpStream, ToSocketAddrs}, process::{Command, Stdio}};
+    use std::{
+        net::{TcpStream, ToSocketAddrs},
+        process::{Command, Stdio},
+    };
     let up = || {
         config::local_worker_address(asr)
             .ok()
@@ -562,13 +565,20 @@ fn start_worker(rt: &Runtime, asr: &Value) -> Result<()> {
     if up() {
         return Ok(());
     }
-    let cmd: Vec<&str> = asr["worker_command"].as_array().map(|c| c.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    let cmd: Vec<&str> = asr["worker_command"]
+        .as_array()
+        .map(|c| c.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
     let Some((program, rest)) = cmd.split_first() else {
-        return Err(Error::operation("The ASR worker is not running. Start it, or set asr.worker_command so Blitzline can."));
+        return Err(Error::operation(
+            "The ASR worker is not running. Start it, or set asr.worker_command so Blitzline can.",
+        ));
     };
     // The worker exits on its own once this process is gone (it polls BLITZLINE_PARENT_PID).
     let log = std::env::temp_dir().join("blitzline-worker.log");
-    let stderr = std::fs::File::create(&log).map(Stdio::from).unwrap_or_else(|_| Stdio::null());
+    let stderr = std::fs::File::create(&log)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
     let mut child = Command::new(program)
         .args(rest)
         .stdin(Stdio::null())
@@ -586,10 +596,20 @@ fn start_worker(rt: &Runtime, asr: &Value) -> Result<()> {
         }
         if child.try_wait().ok().flatten().is_some() {
             let why = std::fs::read_to_string(&log).unwrap_or_default();
-            let why = why.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("no output").to_string();
-            return Err(Error::operation(format!("The ASR worker exited while starting: {why} (full log: {})", log.display())));
+            let why = why
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("no output")
+                .to_string();
+            return Err(Error::operation(format!(
+                "The ASR worker exited while starting: {why} (full log: {})",
+                log.display()
+            )));
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    Err(Error::operation("The ASR worker did not start within three minutes"))
+    Err(Error::operation(
+        "The ASR worker did not start within three minutes",
+    ))
 }

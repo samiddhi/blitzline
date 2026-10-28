@@ -211,17 +211,38 @@ fn save(rt: &Runtime, path: &str, key: &str, value: &Value, usage: &Value) -> Re
 /// Ask the locally installed Claude CLI, signed in with the user's subscription. The transcript goes
 /// on stdin only; the arguments hold the fixed instruction and schema. Diagnostics are never echoed.
 fn claude_cli(rt: &Runtime, profile: &Value, task: &Task, payload: &Value) -> Result<Value> {
-    let command: Vec<&str> = profile["command"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-    let (program, prefix) = command.split_first().ok_or_else(|| Error::input("Missing claude-cli command"))?;
+    let command: Vec<&str> = profile["command"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let (program, prefix) = command
+        .split_first()
+        .ok_or_else(|| Error::input("Missing claude-cli command"))?;
     let mut argv: Vec<String> = prefix.iter().map(|a| a.to_string()).collect();
     // Isolation flags keep the user's MCP servers, plugins, hooks, skills and CLAUDE.md out of the
     // request. --bare would also disable the subscription login, so it is not used. Two or more turns
     // are needed: structured output is delivered through a tool call.
     for a in [
-        "-p", "--model", profile["model"].as_str().unwrap_or(""), "--tools", "", "--max-turns", "3",
-        "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
-        "--output-format", "json", "--json-schema", &canonical(&task.schema),
-        "--system-prompt", payload["messages"][0]["content"].as_str().unwrap_or(""),
+        "-p",
+        "--model",
+        profile["model"].as_str().unwrap_or(""),
+        "--tools",
+        "",
+        "--max-turns",
+        "3",
+        "--no-session-persistence",
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--output-format",
+        "json",
+        "--json-schema",
+        &canonical(&task.schema),
+        "--system-prompt",
+        payload["messages"][0]["content"].as_str().unwrap_or(""),
     ] {
         argv.push(a.into());
     }
@@ -242,7 +263,8 @@ fn claude_cli(rt: &Runtime, profile: &Value, task: &Task, payload: &Value) -> Re
             false,
         ),
     })?;
-    let out: Value = serde_json::from_str(&reply).map_err(|_| failure("The Claude CLI returned malformed JSON", false))?;
+    let out: Value = serde_json::from_str(&reply)
+        .map_err(|_| failure("The Claude CLI returned malformed JSON", false))?;
     if out["is_error"] != false || out["subtype"] != "success" {
         return Err(failure(
             "The Claude CLI reported an error. Check that you are signed in and that your plan's usage limit has not been reached.",

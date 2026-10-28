@@ -53,8 +53,20 @@ pub fn run(rt: &Runtime, executable: &str, args: &[String], timeout: u64) -> Res
 }
 /// Environment a sandboxed tool may inherit: enough to find its own login, nothing that changes its behaviour.
 const ISOLATED_ENV: &[&str] = &[
-    "HOME", "USER", "LOGNAME", "PATH", "LANG", "TERM", "TMPDIR", "TEMP", "TMP", "CLAUDE_CONFIG_DIR",
-    "SYSTEMROOT", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "PATH",
+    "LANG",
+    "TERM",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "CLAUDE_CONFIG_DIR",
+    "SYSTEMROOT",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
 ];
 /// Like `run`, but writes `input` to stdin and, in that case, also clears the environment (except
 /// `ISOLATED_ENV`, `XDG_*` and `LC_*`) and starts in the temporary directory.
@@ -72,14 +84,21 @@ pub fn run_with(
     let mut command = Command::new(path);
     command
         .args(args)
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if input.is_some() {
         command.env_clear().current_dir(std::env::temp_dir());
         for (k, v) in std::env::vars_os() {
             let name = k.to_string_lossy();
-            if ISOLATED_ENV.contains(&name.as_ref()) || name.starts_with("XDG_") || name.starts_with("LC_") {
+            if ISOLATED_ENV.contains(&name.as_ref())
+                || name.starts_with("XDG_")
+                || name.starts_with("LC_")
+            {
                 command.env(k, v);
             }
         }
@@ -215,7 +234,12 @@ pub fn extract(rt: &Runtime, request: &Request, settings: &Value) -> Result<Valu
             .map(fs::read_to_string)
             .transpose()?
             .unwrap_or_default();
-        words.extend(own.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_lowercase));
+        words.extend(
+            own.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(str::to_lowercase),
+        );
         // Kept in the project folder so the list of known words can be inspected.
         let file = rt.path("known_words.txt")?;
         fs::write(&file, words.into_iter().collect::<Vec<_>>().join("\n"))?;

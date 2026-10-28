@@ -203,7 +203,9 @@ fn method(method: Method) -> &'static str {
 }
 pub(super) fn connection(preferences: &Preferences) -> data::Result<Value> {
     if preferences.use_claude_cli {
-        let model = Some(preferences.claude_cli_model.as_str()).filter(|m| !m.is_empty()).unwrap_or("sonnet");
+        let model = Some(preferences.claude_cli_model.as_str())
+            .filter(|m| !m.is_empty())
+            .unwrap_or("sonnet");
         let profile = json!({"provider":config::CLAUDE_CLI,"model":model,"effort":preferences.claude_cli_effort,"timeout":preferences.timeout});
         let profiles = config::merge(json!({"profiles":{"desktop":profile}}), Path::new("."))?;
         return Ok(profiles["profiles"]["desktop"].clone());
@@ -222,7 +224,11 @@ pub(super) fn connection(preferences: &Preferences) -> data::Result<Value> {
 }
 /// A run saved before an AI connection was chosen has no profile to send requests with. Fill it in
 /// from the current Settings; an existing profile is never replaced (that needs "Apply to this project").
-fn add_missing_connection(saved: &mut Value, project: &Project, preferences: &Preferences) -> data::Result<bool> {
+fn add_missing_connection(
+    saved: &mut Value,
+    project: &Project,
+    preferences: &Preferences,
+) -> data::Result<bool> {
     let chosen = preferences.use_claude_cli || !preferences.model.trim().is_empty();
     if !chosen || saved["profiles"].get("desktop").is_some() {
         return Ok(false);
@@ -321,7 +327,12 @@ fn execute_with_credentials(
                     }
                 }
                 if !profile.anki_collection.trim().is_empty() {
-                    let fields: Vec<_> = profile.anki_fields.split(',').map(str::trim).filter(|f| !f.is_empty()).collect();
+                    let fields: Vec<_> = profile
+                        .anki_fields
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|f| !f.is_empty())
+                        .collect();
                     settings["blitzer"]["anki_collection"] = json!(profile.anki_collection.trim());
                     settings["blitzer"]["anki_deck"] = json!(profile.anki_deck.trim());
                     settings["blitzer"]["anki_fields"] = json!(fields);
@@ -369,7 +380,8 @@ fn execute_with_credentials(
             project.settings.for_stage(Stage::Translation),
         ]
         .contains(&Method::Api);
-        if api && matches!(action, NativeAction::Run | NativeAction::Shorten)
+        if api
+            && matches!(action, NativeAction::Run | NativeAction::Shorten)
             && add_missing_connection(&mut p.job.settings, &project, &preferences)?
         {
             p.backend.save(&p.job)?;
@@ -382,7 +394,9 @@ fn execute_with_credentials(
         .contains(&Method::Api)
             && matches!(action, NativeAction::Run | NativeAction::Shorten)
             && !secret.trim().is_empty()
-            && p.job.settings["profiles"].get("desktop").is_some_and(|d| d["provider"] != config::CLAUDE_CLI)
+            && p.job.settings["profiles"]
+                .get("desktop")
+                .is_some_and(|d| d["provider"] != config::CLAUDE_CLI)
         {
             let current = connection(&preferences)?;
             let saved = &p.job.settings["profiles"]["desktop"];
@@ -947,13 +961,21 @@ mod tests {
         project.settings.method = Method::Api;
         let mut saved = settings(config::defaults(), &project, &Preferences::default()).unwrap();
         assert_eq!(saved["llm"]["default"], "");
-        let cli = Preferences { use_claude_cli: true, claude_cli_model: "opus".into(), ..Default::default() };
+        let cli = Preferences {
+            use_claude_cli: true,
+            claude_cli_model: "opus".into(),
+            ..Default::default()
+        };
         assert!(add_missing_connection(&mut saved, &project, &cli).unwrap());
         assert_eq!(saved["llm"]["default"], "desktop");
         assert_eq!(saved["profiles"]["desktop"]["provider"], "claude-cli");
         assert_eq!(saved["profiles"]["desktop"]["model"], "opus");
         // An existing connection is left alone.
-        let other = Preferences { use_claude_cli: true, claude_cli_model: "haiku".into(), ..Default::default() };
+        let other = Preferences {
+            use_claude_cli: true,
+            claude_cli_model: "haiku".into(),
+            ..Default::default()
+        };
         assert!(!add_missing_connection(&mut saved, &project, &other).unwrap());
         assert_eq!(saved["profiles"]["desktop"]["model"], "opus");
     }

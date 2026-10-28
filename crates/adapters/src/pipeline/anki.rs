@@ -130,9 +130,18 @@ mod tests {
         )
         .unwrap();
         drop(db);
-        let words = known_words(&path, "starter", &["slovenian".into(), "SentenceSL".into()]).unwrap();
+        let words =
+            known_words(&path, "starter", &["slovenian".into(), "SentenceSL".into()]).unwrap();
         let words: Vec<_> = words.iter().map(String::as_str).collect();
-        assert_eq!(words, ["filtrirano", "pijem", "podmapa", "sub", "vodo", "voda"].iter().copied().collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>());
+        assert_eq!(
+            words,
+            ["filtrirano", "pijem", "podmapa", "sub", "vodo", "voda"]
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+        );
         assert!(known_words(&path, "missing", &["Slovenian".into()]).is_err());
     }
 }

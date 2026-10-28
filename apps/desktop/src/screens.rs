@@ -1444,10 +1444,16 @@ fn setup_heading(ui: &mut egui::Ui, title: &str, help: &str) {
 }
 
 fn local_engine_label(preferences: &Preferences) -> String {
-    let path = preferences.native_config.as_deref().map(std::path::Path::new);
+    let path = preferences
+        .native_config
+        .as_deref()
+        .map(std::path::Path::new);
     let engine = match blitzline_adapters::pipeline::config::load(path) {
         Ok(c) if blitzline_adapters::pipeline::config::is_local_worker(&c["asr"]) => {
-            let program = c["asr"]["worker_command"][0].as_str().and_then(|p| std::path::Path::new(p).file_name()?.to_str()).unwrap_or("service");
+            let program = c["asr"]["worker_command"][0]
+                .as_str()
+                .and_then(|p| std::path::Path::new(p).file_name()?.to_str())
+                .unwrap_or("service");
             format!("ASR worker: {program}")
         }
         _ => "whisper.cpp".into(),

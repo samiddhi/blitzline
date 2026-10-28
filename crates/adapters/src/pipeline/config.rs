@@ -9,6 +9,7 @@ pub const CLAUDE_CLI: &str = "claude-cli";
 /// Models offered for the Claude CLI (aliases the CLI itself resolves to the latest version).
 pub const CLAUDE_CLI_MODELS: [&str; 3] = ["sonnet", "opus", "haiku"];
 /// Effort levels of `claude --effort`; an empty setting leaves the CLI default.
+pub const MAX_PARALLEL: u64 = 16;
 pub const CLAUDE_CLI_EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 pub fn data_directory() -> PathBuf {
     if let Some(p) = std::env::var_os("XDG_DATA_HOME")
@@ -367,7 +368,7 @@ pub fn validate(s: &Value) -> Result<()> {
         for (key, min, max) in [
             ("timeout", 1, 86400),
             ("retries", 0, 10),
-            ("parallel", 1, 16),
+            ("parallel", 1, MAX_PARALLEL),
             ("max_tokens", 1, 1_000_000),
         ] {
             if !p[key].as_u64().is_some_and(|v| v >= min && v <= max) {

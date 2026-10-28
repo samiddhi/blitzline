@@ -143,6 +143,11 @@ impl Desktop {
                                 ui.selectable_value(&mut prefs.claude_cli_effort, String::new(), "Claude default");
                                 for name in blitzline_adapters::pipeline::config::CLAUDE_CLI_EFFORTS { ui.selectable_value(&mut prefs.claude_cli_effort, name.into(), name); }
                             });
+                            ui.label("Parallel requests");
+                            let parallel = prefs.claude_cli_parallel.max(1);
+                            egui::ComboBox::from_id_salt("claude_cli_parallel").selected_text(parallel.to_string()).show_ui(ui,|ui|{
+                                for count in 1..=blitzline_adapters::pipeline::config::MAX_PARALLEL as usize { ui.selectable_value(&mut prefs.claude_cli_parallel, count, count.to_string()); }
+                            });
                             metadata(ui, "Requests count against your Claude plan's five-hour and weekly limits, shared with Claude chat and Claude Code, so a long run can use them up.");
                             metadata(ui, "Anthropic's plan limits assume ordinary individual use. Use only your own login, and read the Consumer Terms for automated use.");
                             metadata(ui, "The transcript text of each request is sent to Anthropic.");

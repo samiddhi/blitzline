@@ -206,7 +206,10 @@ pub(super) fn connection(preferences: &Preferences) -> data::Result<Value> {
         let model = Some(preferences.claude_cli_model.as_str())
             .filter(|m| !m.is_empty())
             .unwrap_or("sonnet");
-        let profile = json!({"provider":config::CLAUDE_CLI,"model":model,"effort":preferences.claude_cli_effort,"timeout":preferences.timeout});
+        let parallel = preferences
+            .claude_cli_parallel
+            .clamp(1, config::MAX_PARALLEL as usize);
+        let profile = json!({"provider":config::CLAUDE_CLI,"model":model,"effort":preferences.claude_cli_effort,"parallel":parallel,"timeout":preferences.timeout});
         let profiles = config::merge(json!({"profiles":{"desktop":profile}}), Path::new("."))?;
         return Ok(profiles["profiles"]["desktop"].clone());
     }
@@ -978,6 +981,23 @@ mod tests {
         };
         assert!(!add_missing_connection(&mut saved, &project, &other).unwrap());
         assert_eq!(saved["profiles"]["desktop"]["model"], "opus");
+    }
+    #[test]
+    fn the_claude_cli_parallel_preference_reaches_the_profile() {
+        let profile = |n| {
+            connection(&Preferences {
+                use_claude_cli: true,
+                claude_cli_parallel: n,
+                ..Default::default()
+            })
+            .unwrap()["parallel"]
+                .clone()
+        };
+        // Saved preferences from before the setting read as 0; out-of-range values are clamped.
+        assert_eq!(
+            json!([profile(0), profile(4), profile(99)]),
+            json!([1, 4, 16])
+        );
     }
     #[test]
     fn card_counts_use_the_actual_note_templates() {

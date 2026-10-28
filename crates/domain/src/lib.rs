@@ -296,6 +296,9 @@ pub struct Preferences {
     /// low, medium, high, xhigh or max; empty leaves the Claude CLI default.
     #[serde(default)]
     pub claude_cli_effort: String,
+    /// Claude CLI requests sent at once; 0 (unset) and 1 both mean one at a time.
+    #[serde(default)]
+    pub claude_cli_parallel: usize,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -320,6 +323,7 @@ impl Default for Preferences {
             use_claude_cli: false,
             claude_cli_model: "sonnet".into(),
             claude_cli_effort: String::new(),
+            claude_cli_parallel: 1,
         }
     }
 }

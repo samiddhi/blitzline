@@ -478,6 +478,10 @@ impl<B: Backend> Pipeline<B> {
     fn capture_dependencies(&mut self, kind: &str) -> Result<()> {
         let dependencies = self.backend.dependencies(kind, &self.job)?;
         for (path, checksum) in dependencies.as_object().into_iter().flatten() {
+            // The Anki word hash is not a file, so export cannot re-read it.
+            if path == "anki" {
+                continue;
+            }
             if let Some(checksum) = checksum.as_str().filter(|h| h.len() == 64) {
                 self.job.input_hashes.insert(path.clone(), checksum.into());
             }
@@ -1156,6 +1160,7 @@ mod parallel_tests {
         fail_on: Option<&'static str>,
         cancel_after_first: bool,
         cancelled: AtomicBool,
+        dependencies: Value,
     }
     impl Backend for Fake {
         fn write(&self, _: &str, _: &[u8]) -> Result<()> {
@@ -1196,7 +1201,7 @@ mod parallel_tests {
             unimplemented!()
         }
         fn dependencies(&self, _: &str, _: &Job) -> Result<Value> {
-            unimplemented!()
+            Ok(self.dependencies.clone())
         }
         fn probe(&self, _: &Request, _: &Value) -> Result<MediaInfo> {
             unimplemented!()
@@ -1322,5 +1327,17 @@ mod parallel_tests {
         assert_eq!(error.code, "paused");
         assert!(p.backend.calls.load(SeqCst) <= 2);
         assert!(p.job.history.is_empty());
+    }
+    #[test]
+    fn only_the_anki_hash_is_left_out_of_the_input_hashes() {
+        let hash = "a".repeat(64);
+        let backend = Fake {
+            dependencies: json!({"anki": hash, "relative/lexicon.db": hash, "/bin/tool": hash}),
+            ..Fake::default()
+        };
+        let mut p = pipeline(backend, 1);
+        p.capture_dependencies("blitzer").unwrap();
+        let keys: Vec<_> = p.job.input_hashes.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["/bin/tool", "relative/lexicon.db"]);
     }
 }

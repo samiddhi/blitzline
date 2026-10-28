@@ -5,7 +5,13 @@ use std::collections::{BTreeSet, btree_map::Entry};
 
 /// Copies the collection first: Anki keeps it open (WAL mode), and a read-only connection to the
 /// live file would need to write the shared-memory file next to it.
-pub fn known_words(collection: &Path, deck: &str, fields: &[String]) -> Result<BTreeSet<String>> {
+/// Returns (exact spellings, word families). The first field listed is the headword; on a noun
+/// note type (one with a Gender field) it is a family, so every inflected form counts as known.
+pub fn known_words(
+    collection: &Path,
+    deck: &str,
+    fields: &[String],
+) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
     if !collection.is_file() {
         return Err(Error::input(
             "The Anki collection file was not found; check the path in the profile",
@@ -30,8 +36,9 @@ pub fn known_words(collection: &Path, deck: &str, fields: &[String]) -> Result<B
                 where c.nid = n.id and c.type != 0 and (d.name = ?1 or d.name like ?1 || char(31) || '%'))",
         )
         .map_err(fail)?;
-    let mut positions: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
+    let mut positions: BTreeMap<i64, Vec<(usize, bool)>> = BTreeMap::new();
     let mut words = BTreeSet::new();
+    let mut families = BTreeSet::new();
     let mut rows = statement.query([deck]).map_err(fail)?;
     while let Some(row) = rows.next().map_err(fail)? {
         let mid: i64 = row.get(0).map_err(fail)?;
@@ -44,28 +51,35 @@ pub fn known_words(collection: &Path, deck: &str, fields: &[String]) -> Result<B
                 .map_err(fail)?
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(fail)?;
+            let noun = names.iter().any(|n| n.eq_ignore_ascii_case("gender"));
             let wanted = names
                 .iter()
                 .enumerate()
                 .filter(|(_, n)| fields.iter().any(|f| f.eq_ignore_ascii_case(n)))
-                .map(|(i, _)| i)
+                .map(|(i, n)| {
+                    (
+                        i,
+                        noun && fields.first().is_some_and(|f| f.eq_ignore_ascii_case(n)),
+                    )
+                })
                 .collect();
             slot.insert(wanted);
         }
         let flds: String = row.get(1).map_err(fail)?;
         let parts: Vec<&str> = flds.split('\x1f').collect();
-        for &i in &positions[&mid] {
+        for &(i, family) in &positions[&mid] {
             if let Some(text) = parts.get(i) {
-                words.extend(tokens(text));
+                let target = if family { &mut families } else { &mut words };
+                target.extend(tokens(text));
             }
         }
     }
-    if words.is_empty() {
+    if words.is_empty() && families.is_empty() {
         return Err(Error::input(
             "No known words were found in Anki; check the deck name and field names in the profile",
         ));
     }
-    Ok(words)
+    Ok((words, families))
 }
 
 /// Words of one field with markup, `[sound:...]` references and punctuation removed.
@@ -117,31 +131,37 @@ mod tests {
              create table cards(id integer primary key, nid integer, did integer, odid integer, type integer);
              create table decks(id integer primary key, name text);
              create table fields(ntid integer, ord integer, name text);
-             insert into fields values (1,0,'Slovenian'),(1,1,'English'),(1,2,'SentenceSL');
+             insert into fields values (1,0,'Slovenian'),(1,1,'English'),(1,2,'SentenceSL'),(2,0,'Slovenian'),(2,1,'Gender'),(2,2,'English'),(2,3,'SentenceSL');
              insert into decks values (1,'starter'),(2,'starter'||char(31)||'Grammar'),(3,'other'),(4,'Filtered');
              insert into notes values
                (1,1,'voda'||char(31)||'water'||char(31)||'Pijem <b>vodo</b>.'),
                (2,1,'nova'||char(31)||'new'||char(31)||'Nova hiša.'),
                (3,1,'drugo'||char(31)||'other'||char(31)||'Drugi dan.'),
                (4,1,'sub'||char(31)||'sub'||char(31)||'Podmapa.'),
-               (5,1,'filtrirano'||char(31)||'filtered'||char(31)||'');
+               (5,1,'filtrirano'||char(31)||'filtered'||char(31)||''),
+               (6,2,'pes'||char(31)||'m'||char(31)||'dog'||char(31)||'Laja glasno.');
              insert into cards values
-               (1,1,1,0,2),(2,2,1,0,0),(3,3,3,0,2),(4,4,2,0,1),(5,5,4,1,2);",
+               (1,1,1,0,2),(2,2,1,0,0),(3,3,3,0,2),(4,4,2,0,1),(5,5,4,1,2),(6,6,1,0,2);",
         )
         .unwrap();
         drop(db);
-        let words =
+        let (words, families) =
             known_words(&path, "starter", &["slovenian".into(), "SentenceSL".into()]).unwrap();
-        let words: Vec<_> = words.iter().map(String::as_str).collect();
+        let set = |list: &[&str]| list.iter().map(|w| w.to_string()).collect::<BTreeSet<_>>();
         assert_eq!(
             words,
-            ["filtrirano", "pijem", "podmapa", "sub", "vodo", "voda"]
-                .iter()
-                .copied()
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>()
+            set(&[
+                "filtrirano",
+                "glasno",
+                "laja",
+                "pijem",
+                "podmapa",
+                "sub",
+                "vodo",
+                "voda"
+            ])
         );
+        assert_eq!(families, set(&["pes"]));
         assert!(known_words(&path, "missing", &["Slovenian".into()]).is_err());
     }
 }

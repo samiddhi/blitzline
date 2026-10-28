@@ -318,6 +318,12 @@ fn execute_with_credentials(
                         settings["blitzer"][name] = json!(path);
                     }
                 }
+                if !profile.anki_collection.trim().is_empty() {
+                    let fields: Vec<_> = profile.anki_fields.split(',').map(str::trim).filter(|f| !f.is_empty()).collect();
+                    settings["blitzer"]["anki_collection"] = json!(profile.anki_collection.trim());
+                    settings["blitzer"]["anki_deck"] = json!(profile.anki_deck.trim());
+                    settings["blitzer"]["anki_fields"] = json!(fields);
+                }
             }
             // Resolve attachments before creating a manifest. Otherwise a failed
             // import could be retried as a new transcription request.

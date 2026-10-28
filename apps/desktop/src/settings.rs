@@ -275,6 +275,12 @@ impl Desktop {
                         ui.add(text_area(&mut profile.exact_words).desired_rows(3).desired_width(f32::INFINITY));
                         ui.label("Word families — skips dictionary-connected forms, such as the forms of 'be'.");
                         ui.add(text_area(&mut profile.word_families).desired_rows(3).desired_width(f32::INFINITY));
+                        ui.separator();
+                        ui.label("Anki deck as the source of known words — checked live every time words are extracted.");
+                        ui.small("Every word in these fields of any note with a card you have seen (not new) is treated as known, by exact spelling.");
+                        ui.label("Anki collection file");ui.add(text_input(&mut profile.anki_collection).hint_text("~/.local/share/Anki2/User 1/collection.anki2"));
+                        ui.label("Deck (includes its subdecks)");ui.add(text_input(&mut profile.anki_deck));
+                        ui.label("Fields that contain the language, comma-separated");ui.add(text_input(&mut profile.anki_fields).hint_text("Slovenian, SentenceSL"));
                         ui.small("Managed lists are captured when a new project selects this profile. External Blitzer lists remain unchanged.");
                     });
                     ui.collapsing("Advanced defaults",|ui|{

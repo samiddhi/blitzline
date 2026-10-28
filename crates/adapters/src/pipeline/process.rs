@@ -186,7 +186,42 @@ pub fn arguments(request: &Request, settings: &Value, path: &Path) -> Vec<String
     }
     args
 }
+/// Words from the configured Anki deck, read fresh on every call; None when Anki is not configured.
+fn anki_words(settings: &Value) -> Result<Option<std::collections::BTreeSet<String>>> {
+    let b = &settings["blitzer"];
+    let Some(collection) = b["anki_collection"].as_str().filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    let fields: Vec<String> = b["anki_fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.as_str().map(str::to_string))
+        .collect();
+    anki::known_words(
+        Path::new(&config::resolve_path(collection, Path::new("."))?),
+        b["anki_deck"].as_str().unwrap_or_default(),
+        &fields,
+    )
+    .map(Some)
+}
 pub fn extract(rt: &Runtime, request: &Request, settings: &Value) -> Result<Value> {
+    let mut settings = settings.clone();
+    // bltzr takes one exact-words file, so the Anki words join the profile's own list.
+    if let Some(mut words) = anki_words(&settings)? {
+        let own = settings["blitzer"]["skip_exact_words_file"]
+            .as_str()
+            .filter(|p| !p.is_empty())
+            .map(fs::read_to_string)
+            .transpose()?
+            .unwrap_or_default();
+        words.extend(own.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_lowercase));
+        // Kept in the project folder so the list of known words can be inspected.
+        let file = rt.path("known_words.txt")?;
+        fs::write(&file, words.into_iter().collect::<Vec<_>>().join("\n"))?;
+        settings["blitzer"]["skip_exact_words_file"] = json!(file);
+    }
+    let settings = &settings;
     let raw = run(
         rt,
         settings["blitzer"]["executable"]
@@ -224,6 +259,10 @@ pub fn dependencies(kind: &str, job: &Job) -> Result<Value> {
     }
     if kind == "blitzer" {
         let b = &s["blitzer"];
+        if let Some(words) = anki_words(s)? {
+            let joined = words.into_iter().collect::<Vec<_>>().join("\n");
+            files.insert("anki".into(), format!("{:x}", Sha256::digest(joined)));
+        }
         let explicit = b["config"]
             .as_str()
             .filter(|v| !v.is_empty())

@@ -1,4 +1,5 @@
 //! Native production adapters shared by CLI and desktop workers.
+mod anki;
 pub mod config;
 mod exports;
 mod media;

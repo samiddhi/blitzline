@@ -241,6 +241,14 @@ pub struct Profile {
     pub deck: String,
     pub exact_words: String,
     pub word_families: String,
+    /// Path to an Anki collection whose seen cards define known words; empty means unused.
+    #[serde(default)]
+    pub anki_collection: String,
+    #[serde(default)]
+    pub anki_deck: String,
+    /// Comma-separated names of the fields that contain the studied language.
+    #[serde(default)]
+    pub anki_fields: String,
     pub settings: Settings,
 }
 impl Default for Profile {
@@ -251,6 +259,9 @@ impl Default for Profile {
             deck: "Languages::Slovenian".into(),
             exact_words: String::new(),
             word_families: String::new(),
+            anki_collection: String::new(),
+            anki_deck: String::new(),
+            anki_fields: String::new(),
             settings: Settings::default(),
         }
     }

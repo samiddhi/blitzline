@@ -198,7 +198,7 @@ fn profile_defaults(p: &Value) -> Result<Value> {
             ));
         }
     };
-    let mut out = json!({"provider":provider,"base_url":base,"api_key_env":key,"model":"","temperature":0.2,"max_tokens":8192,"timeout":120,"retries":2,"response_format":"json_object","referer":"","openrouter_provider":"","openrouter_max_price":{}});
+    let mut out = json!({"provider":provider,"base_url":base,"api_key_env":key,"model":"","temperature":0.2,"max_tokens":8192,"timeout":120,"retries":2,"parallel":1,"response_format":"json_object","referer":"","openrouter_provider":"","openrouter_max_price":{}});
     if provider == CLAUDE_CLI {
         out["command"] = json!(["claude"]);
         out["effort"] = json!("");
@@ -367,6 +367,7 @@ pub fn validate(s: &Value) -> Result<()> {
         for (key, min, max) in [
             ("timeout", 1, 86400),
             ("retries", 0, 10),
+            ("parallel", 1, 16),
             ("max_tokens", 1, 1_000_000),
         ] {
             if !p[key].as_u64().is_some_and(|v| v >= min && v <= max) {
@@ -565,5 +566,38 @@ mod worker_tests {
         s["asr"]["endpoint"] = json!("http://localhost:8765/transcribe");
         assert!(is_local_worker(&s["asr"]));
         validate(&s).unwrap();
+    }
+}
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+    fn with_parallel(provider: &str, n: Value) -> Result<()> {
+        let model = if provider == CLAUDE_CLI {
+            CLAUDE_CLI_MODELS[0]
+        } else {
+            "m"
+        };
+        let mut s = defaults();
+        s["profiles"]["p"] =
+            profile_defaults(&json!({"provider":provider,"model":model,"parallel":n}))?;
+        validate(&s)
+    }
+    #[test]
+    fn parallel_is_an_integer_from_1_to_16() {
+        for provider in ["openrouter", "claude-cli"] {
+            for ok in [1, 4, 16] {
+                with_parallel(provider, json!(ok)).unwrap();
+            }
+            for bad in [json!(0), json!(17), json!("2"), json!(1.5)] {
+                assert!(with_parallel(provider, bad).is_err());
+            }
+        }
+    }
+    #[test]
+    fn parallel_defaults_to_one() {
+        assert_eq!(
+            profile_defaults(&json!({"provider":"claude-cli"})).unwrap()["parallel"],
+            1
+        );
     }
 }

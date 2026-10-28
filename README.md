@@ -90,7 +90,9 @@ api_key_env = "OPENROUTER_API_KEY"
 
 Keys come from environment variables; desktop-entered keys are session-only.
 OpenRouter, DeepSeek, and compatible HTTP profiles support configured response
-modes, routing, reasoning, retries, and request caches. Automatic service use
+modes, routing, reasoning, retries, and request caches. A profile's `parallel`
+(1–16, default 1) sends that many requests of a stage at once; answers are still
+applied in order. Automatic service use
 requires the user's processing choice and may incur charges.
 
 ```sh

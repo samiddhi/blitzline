@@ -2,8 +2,16 @@
 use blitzline_domain::pipeline::*;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BTreeSet};
-pub trait Backend {
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
+};
+/// Requests run on scoped threads, so the backend must be shareable between them.
+pub trait Backend: Sync {
     fn read(&self, path: &str) -> Result<Vec<u8>>;
     fn write(&self, path: &str, bytes: &[u8]) -> Result<()>;
     fn fingerprint(&self, path: &str) -> Result<String>;
@@ -511,37 +519,73 @@ impl<B: Backend> Pipeline<B> {
                 .clone(),
         ))
     }
+    /// Runs a stage's requests, up to the profile's `parallel` count at once, and returns each
+    /// accepted answer in batch order. Answers are applied one batch at a time, as before.
+    fn run_batches(&mut self, stage: &str, batches: Vec<Batch>) -> Result<Vec<Value>> {
+        let mut answers = self.prefetch(stage, &batches)?;
+        batches
+            .into_iter()
+            .zip(answers.iter_mut())
+            .map(|(batch, answer)| self.task(stage, batch, answer.take()))
+            .collect()
+    }
+    /// Sends the first request of each batch concurrently. A failed request is kept as its error
+    /// and raised when its batch is reached, so a failure stops the run where it always did.
+    fn prefetch(&self, stage: &str, batches: &[Batch]) -> Result<Vec<Option<Result<Value>>>> {
+        let mut answers: Vec<_> = batches.iter().map(|_| None).collect();
+        let Some(profile) = self.profile(stage)? else {
+            return Ok(answers);
+        };
+        let width = profile["parallel"].as_u64().unwrap_or(1).max(1) as usize;
+        if width == 1 {
+            return Ok(answers);
+        }
+        let max = self.job.settings["llm"]["max_chars"]
+            .as_u64()
+            .unwrap_or(24000) as usize;
+        let work = batches
+            .iter()
+            .enumerate()
+            .map(|(index, batch)| {
+                let id = task_id(self.job.revision, stage, batch.sequence, &batch.requested);
+                (index, new_task(id, self.job.revision, stage, batch))
+            })
+            .filter(|(_, task)| !self.job.history.iter().any(|t| t.id == task.id))
+            .filter(|(_, task)| canonical(&task.request_data()).chars().count() <= max)
+            .collect::<Vec<_>>();
+        let next = AtomicUsize::new(0);
+        let done = Mutex::new(Vec::new());
+        let backend = &self.backend;
+        thread::scope(|scope| {
+            for _ in 0..width.min(work.len()) {
+                scope.spawn(|| {
+                    while let Some((index, task)) = work.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        if backend.cancelled() {
+                            break;
+                        }
+                        let answer = backend.request(&profile, task);
+                        done.lock().unwrap().push((*index, answer));
+                    }
+                });
+            }
+        });
+        for (index, answer) in done.into_inner().unwrap() {
+            answers[index] = Some(answer);
+        }
+        Ok(answers)
+    }
     fn task(
         &mut self,
         stage: &str,
-        sequence: usize,
-        instruction: &str,
-        data: Value,
-        schema: Value,
-        requested: Vec<String>,
+        batch: Batch,
+        mut answer: Option<Result<Value>>,
     ) -> Result<Value> {
-        let id = format!(
-            "exchange-{}",
-            &digest(&json!([self.job.revision, stage, sequence, requested]))[..24]
-        );
+        let id = task_id(self.job.revision, stage, batch.sequence, &batch.requested);
         if let Some(saved) = self.job.history.iter().find(|t| t.id == id) {
             return Ok(task_value(saved));
         }
         if self.job.pending.as_ref().is_none_or(|p| p.id != id) {
-            self.job.pending = Some(Task {
-                id,
-                revision: self.job.revision,
-                stage: stage.into(),
-                sequence,
-                instruction: instruction.into(),
-                data,
-                schema,
-                requested,
-                accepted: BTreeMap::new(),
-                draft: String::new(),
-                errors: vec![],
-                attempts: 0,
-            });
+            self.job.pending = Some(new_task(id, self.job.revision, stage, &batch));
         }
         let limit = self.job.settings["llm"]["repair_attempts"]
             .as_u64()
@@ -611,7 +655,10 @@ impl<B: Backend> Pipeline<B> {
                     "The model answer needs correction; accepted items are saved. Submit a corrected reply or explicitly retry the review stage.",
                 ));
             }
-            let result = self.backend.request(&profile, task)?;
+            let result = match answer.take() {
+                Some(answer) => answer?,
+                None => self.backend.request(&profile, task)?,
+            };
             self.job.pending.as_mut().unwrap().attempts += 1;
             if let Err(error) = self.apply_task_response(result, false) {
                 if error.code != "invalid_input" {
@@ -848,12 +895,21 @@ impl<B: Backend> Pipeline<B> {
         if !current.is_empty() {
             batches.push(current);
         }
+        let mut requests = Vec::new();
         for (i, chunk) in batches.into_iter().enumerate() {
             let requested = chunk
                 .iter()
                 .map(|r| r["cue_id"].as_str().unwrap().to_owned())
                 .collect();
-            let value=self.task(stage,i,instruction,json!({"language":self.job.request.language,"requested":chunk,"neighbours":cues.iter().enumerate().filter(|(index,_)| { let first=cues.iter().position(|c| chunk[0]["cue_id"]==c.id).unwrap_or(0); *index>=first.saturating_sub(1)&&*index<=first+chunk.len() }).map(|(_,c)|json!({"cue_id":c.id,"text":c.text})).collect::<Vec<_>>()}),schema.clone(),requested)?;
+            requests.push(Batch {
+                sequence: i,
+                instruction,
+                data: json!({"language":self.job.request.language,"requested":chunk,"neighbours":cues.iter().enumerate().filter(|(index,_)| { let first=cues.iter().position(|c| chunk[0]["cue_id"]==c.id).unwrap_or(0); *index>=first.saturating_sub(1)&&*index<=first+chunk.len() }).map(|(_,c)|json!({"cue_id":c.id,"text":c.text})).collect::<Vec<_>>()}),
+                schema: schema.clone(),
+                requested,
+            });
+        }
+        for value in self.run_batches(stage, requests)? {
             for row in value["cues"].as_array().unwrap() {
                 if let Some(c) = out.iter_mut().find(|c| row["cue_id"] == c.id) {
                     let t = row["text"].as_str().unwrap();
@@ -888,6 +944,7 @@ impl<B: Backend> Pipeline<B> {
             .filter(|g| !g.is_empty())
             .collect::<Vec<_>>();
         // Retain the complete related group as evidence even when repairing one item.
+        let mut requests = Vec::new();
         for (i, chunk) in vocabulary::batches(remaining, size, max)?
             .into_iter()
             .enumerate()
@@ -899,13 +956,21 @@ impl<B: Backend> Pipeline<B> {
                 .flatten()
                 .cloned()
                 .collect::<Vec<_>>();
-            self.task("review",i,"Review unknown lemma candidates as a language educator. Check every highlighted occurrence in its full original sentence against this exact lemma and part of speech. Exclude names, duplicates, and false matches. Keep valid unknown dictionary forms, with one or two owned context IDs and an English meaning supported by those examples. Never invent terms, sentences, counts, IDs, or timing. Notes are useful learner notes, otherwise empty. When evidence is insufficient use needs-review with a reason.",json!({"language":self.job.request.language,"requested_ids":ids,"candidates":evidence}),vocabulary::review_schema(),ids)?;
+            requests.push(Batch {
+                sequence: i,
+                instruction: "Review unknown lemma candidates as a language educator. Check every highlighted occurrence in its full original sentence against this exact lemma and part of speech. Exclude names, duplicates, and false matches. Keep valid unknown dictionary forms, with one or two owned context IDs and an English meaning supported by those examples. Never invent terms, sentences, counts, IDs, or timing. Notes are useful learner notes, otherwise empty. When evidence is insufficient use needs-review with a reason.",
+                data: json!({"language":self.job.request.language,"requested_ids":ids,"candidates":evidence}),
+                schema: vocabulary::review_schema(),
+                requested: ids,
+            });
         }
+        self.run_batches("review", requests)?;
         if llm["ambiguity_review"]
             .as_str()
             .is_some_and(|s| !s.is_empty())
         {
             let groups = groups.into_iter().filter(|g| g.len() > 1).collect();
+            let mut requests = Vec::new();
             for (i, chunk) in vocabulary::batches(
                 groups,
                 llm["ambiguity_batch_size"].as_u64().unwrap_or(5) as usize,
@@ -915,18 +980,33 @@ impl<B: Backend> Pipeline<B> {
             .enumerate()
             {
                 let ids = chunk.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
-                self.task("ambiguity_review",i,"Independently recheck every candidate in this competing lemma group, including rejected candidates. First-pass decisions are untrusted. Check exact word forms and parts of speech in each full sentence; return complete corrected decisions without changing source evidence.",json!({"language":self.job.request.language,"requested_ids":ids,"candidates":chunk,"first_pass_decisions":self.job.decisions.values().filter(|decision|ids.contains(&decision.candidate_id)).collect::<Vec<_>>()}),vocabulary::review_schema(),ids)?;
+                requests.push(Batch {
+                    sequence: i,
+                    instruction: "Independently recheck every candidate in this competing lemma group, including rejected candidates. First-pass decisions are untrusted. Check exact word forms and parts of speech in each full sentence; return complete corrected decisions without changing source evidence.",
+                    data: json!({"language":self.job.request.language,"requested_ids":ids,"candidates":chunk,"first_pass_decisions":self.job.decisions.values().filter(|decision|ids.contains(&decision.candidate_id)).collect::<Vec<_>>()}),
+                    schema: vocabulary::review_schema(),
+                    requested: ids,
+                });
             }
+            self.run_batches("ambiguity_review", requests)?;
         }
         if llm["audit_review"].as_str().is_some_and(|s| !s.is_empty()) && !candidates.is_empty() {
             let item = vocabulary::object_schema(
                 json!({"index":{"type":"integer","minimum":0},"decision":{"type":"string","enum":["keep","reject","needs-review"]},"reason":{"type":"string"},"english":{"type":"string"},"context_indices":{"type":"array","items":{"type":"integer","minimum":0},"maxItems":2},"notes":{"type":"string"}}),
             );
             let batches = vocabulary::batches(vocabulary::groups(candidates, &forms), size, max)?;
+            let mut requests = Vec::new();
             for (sequence, chunk) in batches.into_iter().enumerate() {
                 let audit = chunk.iter().enumerate().map(|(i,c)|json!({"index":i,"term":c.term,"current":self.job.decisions.get(&c.id),"examples":c.contexts})).collect::<Vec<_>>();
-                self.task("audit_review", sequence, "Independently audit EVERY indexed candidate and highlighted occurrence. Return only wrong decisions as complete replacements with candidate index and zero-based context_indices. Omit unchanged candidates. Do not alter source terms, examples, frequency, or timing. Return corrections even when empty.", json!({"language":self.job.request.language,"candidate_count":chunk.len(),"candidates":audit,"original_candidates":chunk}), vocabulary::object_schema(json!({"corrections":{"type":"array","items":item}})), vec!["audit".into()])?;
+                requests.push(Batch {
+                    sequence,
+                    instruction: "Independently audit EVERY indexed candidate and highlighted occurrence. Return only wrong decisions as complete replacements with candidate index and zero-based context_indices. Omit unchanged candidates. Do not alter source terms, examples, frequency, or timing. Return corrections even when empty.",
+                    data: json!({"language":self.job.request.language,"candidate_count":chunk.len(),"candidates":audit,"original_candidates":chunk}),
+                    schema: vocabulary::object_schema(json!({"corrections":{"type":"array","items":item}})),
+                    requested: vec!["audit".into()],
+                });
             }
+            self.run_batches("audit_review", requests)?;
         }
         Ok(())
     }
@@ -1017,6 +1097,36 @@ impl<B: Backend> Pipeline<B> {
         Ok(paths)
     }
 }
+/// One request of a stage, collected before any of them is sent.
+struct Batch {
+    sequence: usize,
+    instruction: &'static str,
+    data: Value,
+    schema: Value,
+    requested: Vec<String>,
+}
+fn task_id(revision: u64, stage: &str, sequence: usize, requested: &[String]) -> String {
+    format!(
+        "exchange-{}",
+        &digest(&json!([revision, stage, sequence, requested]))[..24]
+    )
+}
+fn new_task(id: String, revision: u64, stage: &str, batch: &Batch) -> Task {
+    Task {
+        id,
+        revision,
+        stage: stage.into(),
+        sequence: batch.sequence,
+        instruction: batch.instruction.into(),
+        data: batch.data.clone(),
+        schema: batch.schema.clone(),
+        requested: batch.requested.clone(),
+        accepted: BTreeMap::new(),
+        draft: String::new(),
+        errors: vec![],
+        attempts: 0,
+    }
+}
 fn task_value(task: &Task) -> Value {
     if task.stage == "review" || task.stage == "ambiguity_review" {
         json!({"decisions":task.requested.iter().filter_map(|id|task.accepted.get(id)).collect::<Vec<_>>()})
@@ -1027,5 +1137,190 @@ fn task_value(task: &Task) -> Value {
             .unwrap_or_else(|| json!({"corrections":[]}))
     } else {
         json!({"cues":task.requested.iter().filter_map(|id|task.accepted.get(id)).collect::<Vec<_>>()})
+    }
+}
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+    use std::{
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+        time::Duration,
+    };
+    /// Answers every translate request with "T-<cue id>"; only `request` and the bookkeeping
+    /// calls a cue stage makes are real. Earlier cues answer slower, so completions arrive reversed.
+    #[derive(Default)]
+    struct Fake {
+        calls: AtomicUsize,
+        running: AtomicUsize,
+        peak: AtomicUsize,
+        fail_on: Option<&'static str>,
+        cancel_after_first: bool,
+        cancelled: AtomicBool,
+    }
+    impl Backend for Fake {
+        fn write(&self, _: &str, _: &[u8]) -> Result<()> {
+            Ok(())
+        }
+        fn save(&self, _: &Job) -> Result<()> {
+            Ok(())
+        }
+        fn cancelled(&self) -> bool {
+            self.cancelled.load(SeqCst)
+        }
+        fn request(&self, _: &Value, task: &Task) -> Result<Value> {
+            self.calls.fetch_add(1, SeqCst);
+            let now = self.running.fetch_add(1, SeqCst) + 1;
+            self.peak.fetch_max(now, SeqCst);
+            let id = task.requested[0].clone();
+            let n: u64 = id.trim_start_matches("c").parse().unwrap();
+            std::thread::sleep(Duration::from_millis(60 - n * 8));
+            self.running.fetch_sub(1, SeqCst);
+            if self.cancel_after_first {
+                self.cancelled.store(true, SeqCst);
+            }
+            if self.fail_on == Some(id.as_str()) {
+                return Err(Error::operation("boom"));
+            }
+            Ok(json!({"cues":[{"cue_id":id,"text":format!("T-{id}")}]}))
+        }
+        fn read(&self, _: &str) -> Result<Vec<u8>> {
+            unimplemented!()
+        }
+        fn fingerprint(&self, _: &str) -> Result<String> {
+            unimplemented!()
+        }
+        fn external(&self, _: &str) -> Result<Vec<u8>> {
+            unimplemented!()
+        }
+        fn external_hash(&self, _: &str) -> Result<String> {
+            unimplemented!()
+        }
+        fn dependencies(&self, _: &str, _: &Job) -> Result<Value> {
+            unimplemented!()
+        }
+        fn probe(&self, _: &Request, _: &Value) -> Result<MediaInfo> {
+            unimplemented!()
+        }
+        fn transcribe(&self, _: &Request, _: &Value, _: &MediaInfo) -> Result<Value> {
+            unimplemented!()
+        }
+        fn relisten(&self, _: &Request, _: &Value, _: &Cue) -> Result<String> {
+            unimplemented!()
+        }
+        fn extract(&self, _: &Request, _: &Value) -> Result<Value> {
+            unimplemented!()
+        }
+        fn forms(&self, _: &Value, _: &[Candidate]) -> Result<BTreeMap<String, Vec<String>>> {
+            unimplemented!()
+        }
+        fn clips(
+            &self,
+            _: &[Card],
+            _: &Request,
+            _: &MediaInfo,
+            _: &Value,
+        ) -> Result<(Vec<Card>, Vec<Value>)> {
+            unimplemented!()
+        }
+        fn export(&self, _: &[Card], _: &Value) -> Result<Vec<String>> {
+            unimplemented!()
+        }
+        fn export_settings(&self, _: &Value, _: &str) -> Result<Value> {
+            unimplemented!()
+        }
+        fn progress(&self, _: &str, _: &str) {}
+    }
+    fn pipeline(backend: Fake, parallel: u64) -> Pipeline<Fake> {
+        let job = Job {
+            implementation: String::new(),
+            schema_version: 1,
+            created: 0,
+            revision: 1,
+            request: Request {
+                source: String::new(),
+                source_kind: "text".into(),
+                source_hash: String::new(),
+                language: "sk".into(),
+                srt: None,
+                asr_json: None,
+                text_file: None,
+                vocabulary_json: None,
+            },
+            settings: json!({
+                "run":{"method":"api"},
+                "llm":{"default":"p","batch_size":1,"max_chars":24000,"repair_attempts":2},
+                "profiles":{"p":{"parallel":parallel}},
+            }),
+            state: String::new(),
+            message: String::new(),
+            stages: BTreeMap::new(),
+            pending: None,
+            history: vec![],
+            decisions: BTreeMap::new(),
+            cards: 0,
+            omitted: 0,
+            input_hashes: BTreeMap::new(),
+            exports: BTreeMap::new(),
+        };
+        Pipeline { backend, job }
+    }
+    fn cues(n: usize) -> Vec<Cue> {
+        (0..n)
+            .map(|i| Cue {
+                id: format!("c{i}"),
+                start_ms: None,
+                end_ms: None,
+                text: format!("s{i}"),
+                words: vec![],
+            })
+            .collect()
+    }
+    fn texts(cues: &[Cue]) -> Vec<&str> {
+        cues.iter().map(|c| c.text.as_str()).collect()
+    }
+    #[test]
+    fn parallel_requests_overlap_and_apply_in_batch_order() {
+        let mut p = pipeline(Fake::default(), 3);
+        let out = p.cue_review(&cues(6), "translate").unwrap();
+        assert_eq!(
+            texts(&out),
+            ["T-c0", "T-c1", "T-c2", "T-c3", "T-c4", "T-c5"]
+        );
+        assert_eq!(p.backend.calls.load(SeqCst), 6);
+        assert!(p.backend.peak.load(SeqCst) > 1);
+        let history = p.job.history.iter().map(|t| t.sequence).collect::<Vec<_>>();
+        assert_eq!(history, [0, 1, 2, 3, 4, 5]);
+    }
+    #[test]
+    fn parallel_one_sends_one_request_at_a_time() {
+        let mut p = pipeline(Fake::default(), 1);
+        let out = p.cue_review(&cues(4), "translate").unwrap();
+        assert_eq!(texts(&out), ["T-c0", "T-c1", "T-c2", "T-c3"]);
+        assert_eq!(p.backend.calls.load(SeqCst), 4);
+        assert_eq!(p.backend.peak.load(SeqCst), 1);
+    }
+    #[test]
+    fn a_failed_request_stops_at_its_batch_and_keeps_earlier_ones() {
+        let backend = Fake {
+            fail_on: Some("c3"),
+            ..Fake::default()
+        };
+        let mut p = pipeline(backend, 4);
+        let error = p.cue_review(&cues(6), "translate").unwrap_err();
+        assert_eq!(error.message, "boom");
+        assert_eq!(p.job.history.len(), 3);
+        assert_eq!(p.job.history.last().unwrap().requested, ["c2"]);
+    }
+    #[test]
+    fn cancelling_stops_launching_requests() {
+        let backend = Fake {
+            cancel_after_first: true,
+            ..Fake::default()
+        };
+        let mut p = pipeline(backend, 2);
+        let error = p.cue_review(&cues(8), "translate").unwrap_err();
+        assert_eq!(error.code, "paused");
+        assert!(p.backend.calls.load(SeqCst) <= 2);
+        assert!(p.job.history.is_empty());
     }
 }

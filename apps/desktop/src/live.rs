@@ -339,6 +339,8 @@ fn execute_with_credentials(
                     settings["blitzer"]["anki_collection"] = json!(profile.anki_collection.trim());
                     settings["blitzer"]["anki_deck"] = json!(profile.anki_deck.trim());
                     settings["blitzer"]["anki_fields"] = json!(fields);
+                    settings["blitzer"]["anki_family_field"] =
+                        json!(profile.anki_family_field.trim());
                 }
             }
             // Resolve attachments before creating a manifest. Otherwise a failed

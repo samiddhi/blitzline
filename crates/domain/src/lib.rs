@@ -249,6 +249,9 @@ pub struct Profile {
     /// Comma-separated names of the fields that contain the studied language.
     #[serde(default)]
     pub anki_fields: String,
+    /// The one listed field whose words count as word families, on note types with a Gender field.
+    #[serde(default)]
+    pub anki_family_field: String,
     pub settings: Settings,
 }
 impl Default for Profile {
@@ -262,6 +265,7 @@ impl Default for Profile {
             anki_collection: String::new(),
             anki_deck: String::new(),
             anki_fields: String::new(),
+            anki_family_field: String::new(),
             settings: Settings::default(),
         }
     }

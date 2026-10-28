@@ -226,6 +226,7 @@ fn anki_words(settings: &Value) -> Result<Option<Known>> {
         Path::new(&config::resolve_path(collection, Path::new("."))?),
         b["anki_deck"].as_str().unwrap_or_default(),
         &fields,
+        b["anki_family_field"].as_str().unwrap_or_default(),
     )
     .map(Some)
 }

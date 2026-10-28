@@ -287,6 +287,7 @@ impl Desktop {
                         ui.label("Anki collection file");ui.add(text_input(&mut profile.anki_collection).hint_text("~/.local/share/Anki2/User 1/collection.anki2"));
                         ui.label("Deck (includes its subdecks)");ui.add(text_input(&mut profile.anki_deck));
                         ui.label("Fields that contain the language, comma-separated");ui.add(text_input(&mut profile.anki_fields).hint_text("Slovenian, SentenceSL"));
+                        ui.label("Field of noun headwords, counted as word families");ui.add(text_input(&mut profile.anki_family_field).hint_text("Slovenian"));
                         ui.small("Managed lists are captured when a new project selects this profile. External Blitzer lists remain unchanged.");
                     });
                     ui.collapsing("Advanced defaults",|ui|{

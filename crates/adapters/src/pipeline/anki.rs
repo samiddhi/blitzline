@@ -5,12 +5,13 @@ use std::collections::{BTreeSet, btree_map::Entry};
 
 /// Copies the collection first: Anki keeps it open (WAL mode), and a read-only connection to the
 /// live file would need to write the shared-memory file next to it.
-/// Returns (exact spellings, word families). The first field listed is the headword; on a noun
-/// note type (one with a Gender field) it is a family, so every inflected form counts as known.
+/// Returns (exact spellings, word families). On a noun note type (one with a Gender field) the
+/// `family_field` is a family, so every inflected form counts as known; empty means none is.
 pub fn known_words(
     collection: &Path,
     deck: &str,
     fields: &[String],
+    family_field: &str,
 ) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
     if !collection.is_file() {
         return Err(Error::input(
@@ -59,7 +60,7 @@ pub fn known_words(
                 .map(|(i, n)| {
                     (
                         i,
-                        noun && fields.first().is_some_and(|f| f.eq_ignore_ascii_case(n)),
+                        noun && !family_field.is_empty() && family_field.eq_ignore_ascii_case(n),
                     )
                 })
                 .collect();
@@ -145,8 +146,13 @@ mod tests {
         )
         .unwrap();
         drop(db);
-        let (words, families) =
-            known_words(&path, "starter", &["slovenian".into(), "SentenceSL".into()]).unwrap();
+        let (words, families) = known_words(
+            &path,
+            "starter",
+            &["slovenian".into(), "SentenceSL".into()],
+            "Slovenian",
+        )
+        .unwrap();
         let set = |list: &[&str]| list.iter().map(|w| w.to_string()).collect::<BTreeSet<_>>();
         assert_eq!(
             words,
@@ -162,6 +168,9 @@ mod tests {
             ])
         );
         assert_eq!(families, set(&["pes"]));
-        assert!(known_words(&path, "missing", &["Slovenian".into()]).is_err());
+        // Without a family field naming a listed field, nothing is a family.
+        let (words, families) = known_words(&path, "starter", &["slovenian".into()], "").unwrap();
+        assert!(words.contains("pes") && families.is_empty());
+        assert!(known_words(&path, "missing", &["Slovenian".into()], "").is_err());
     }
 }

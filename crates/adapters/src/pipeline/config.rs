@@ -26,7 +26,7 @@ pub fn defaults() -> Value {
     json!({
         "run":{"output_dir":data_directory().join("runs"),"proofread":false,"translate":false,"allow_partial":false,"method":"auto","proofread_method":"auto","translate_method":"auto","review_method":"auto"},
         "asr":{"backend":"local","executable":"whisper-cli","model":"small","model_file":"","device":"cpu","compute_type":"int8","language":"","timeout":7200,"max_cue_ms":8000,"line_length":42,"pause_ms":800,"max_chars_per_second":25,"relisten":false,"endpoint":"","worker_command":[],"api_key_env":"","remote_compute_type":"float16","chunk_seconds":600,"retries":2,"options":{}},
-        "blitzer":{"executable":"bltzr","config":"","plugins_dir":"","known_file":"","skip_exact_words_file":"","skip_word_families_file":"","anki_collection":"","anki_deck":"","anki_fields":[],"no_config":false,"timeout":120},
+        "blitzer":{"executable":"bltzr","config":"","plugins_dir":"","known_file":"","skip_exact_words_file":"","skip_word_families_file":"","anki_collection":"","anki_deck":"","anki_fields":[],"anki_family_field":"","no_config":false,"timeout":120},
         "llm":{"default":"","proofread":"","translate":"","review":"","ambiguity_review":"","audit_review":"","form_lexicon":"","batch_size":20,"ambiguity_batch_size":5,"max_chars":24000,"repair_attempts":2},
         "profiles":{},"decks":{},
         "media":{"kind":"audio","padding_ms":200,"max_clip_ms":45000,"ffmpeg":"ffmpeg","ffprobe":"ffprobe","timeout":300,"audio_codec":"libmp3lame","video_codec":"libx264"},

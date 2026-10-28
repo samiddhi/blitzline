@@ -125,6 +125,35 @@ impl Desktop {
                     "AI connections"=>{
                         ui.label("An API key lets an app send requests to a service for you.");
                         let prefs=&mut self.engine.state.preferences;
+                        ui.label("Connection type");
+                        egui::ComboBox::from_id_salt("connection_type").selected_text(if prefs.use_claude_cli { "Claude CLI (your Claude subscription)" } else { "API key" }).show_ui(ui,|ui|{
+                            ui.selectable_value(&mut prefs.use_claude_cli, false, "API key");
+                            ui.selectable_value(&mut prefs.use_claude_cli, true, "Claude CLI (your Claude subscription)");
+                        });
+                        if prefs.use_claude_cli {
+                            ui.label("Runs the Claude command-line program already installed and signed in on this computer. No API key is used.");
+                            ui.label("Model");
+                            let selected = if prefs.claude_cli_model.is_empty() { "sonnet".to_owned() } else { prefs.claude_cli_model.clone() };
+                            egui::ComboBox::from_id_salt("claude_cli_model").selected_text(selected).show_ui(ui,|ui|{
+                                for name in blitzline_adapters::pipeline::config::CLAUDE_CLI_MODELS { ui.selectable_value(&mut prefs.claude_cli_model, name.into(), name); }
+                            });
+                            ui.label("Effort");
+                            let shown = if prefs.claude_cli_effort.is_empty() { "Claude default" } else { prefs.claude_cli_effort.as_str() }.to_owned();
+                            egui::ComboBox::from_id_salt("claude_cli_effort").selected_text(shown).show_ui(ui,|ui|{
+                                ui.selectable_value(&mut prefs.claude_cli_effort, String::new(), "Claude default");
+                                for name in blitzline_adapters::pipeline::config::CLAUDE_CLI_EFFORTS { ui.selectable_value(&mut prefs.claude_cli_effort, name.into(), name); }
+                            });
+                            metadata(ui, "Requests count against your Claude plan's five-hour and weekly limits, shared with Claude chat and Claude Code, so a long run can use them up.");
+                            metadata(ui, "Anthropic's plan limits assume ordinary individual use. Use only your own login, and read the Consumer Terms for automated use.");
+                            metadata(ui, "The transcript text of each request is sent to Anthropic.");
+                            if ui.button("Check Claude CLI").clicked() {
+                                self.notice = match blitzline_adapters::pipeline::find_tool("claude").and_then(|p| Ok(std::process::Command::new(p).arg("--version").stdin(std::process::Stdio::null()).output()?)) {
+                                    Ok(out) if out.status.success() => format!("Found Claude CLI {}. Sign in with `claude` in a terminal if requests fail.", String::from_utf8_lossy(&out.stdout).trim()),
+                                    _ => "Claude CLI was not found. Install it and sign in, then try again.".into(),
+                                };
+                            }
+                        }
+                        if !prefs.use_claude_cli {
                         let previous_provider = prefs.provider.clone();
                         egui::ComboBox::from_label("Provider").selected_text(&prefs.provider).show_ui(ui,|ui|{
                             for name in ["OpenRouter","DeepSeek","Custom compatible service"]{ui.selectable_value(&mut prefs.provider,name.into(),name);}
@@ -147,6 +176,7 @@ impl Desktop {
                             ui.add(egui::DragValue::new(&mut prefs.retries).range(0..=10).suffix(" retries"));
                             ui.small("Response modes, reasoning, and routing can be selected in a native configuration file.");
                         });
+                        }
                     }
                     "Browser assistance"=>{
                         ui.label("Use any chat website you already know. Blitzline only opens the page; you send the request yourself.");

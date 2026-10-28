@@ -276,6 +276,15 @@ pub struct Preferences {
     pub card_back: String,
     pub card_css: String,
     pub local_model_installed: bool,
+    /// Run the AI steps through the locally installed Claude CLI and its subscription login.
+    #[serde(default)]
+    pub use_claude_cli: bool,
+    /// sonnet, opus or haiku; empty means sonnet.
+    #[serde(default)]
+    pub claude_cli_model: String,
+    /// low, medium, high, xhigh or max; empty leaves the Claude CLI default.
+    #[serde(default)]
+    pub claude_cli_effort: String,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -297,6 +306,9 @@ impl Default for Preferences {
             card_back: "{{Translation}}".into(),
             card_css: ".card { font-size: 24px; }".into(),
             local_model_installed: false,
+            use_claude_cli: false,
+            claude_cli_model: "sonnet".into(),
+            claude_cli_effort: String::new(),
         }
     }
 }

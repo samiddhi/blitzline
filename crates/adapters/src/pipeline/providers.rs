@@ -140,6 +140,11 @@ pub fn request(rt: &Runtime, profile: &Value, task: &Task) -> Result<Value> {
             "LLM cache checksum mismatch; retry the affected stage after reviewing its cache",
         ));
     }
+    if profile["provider"] == config::CLAUDE_CLI {
+        let value = claude_cli(rt, profile, task, &payload)?;
+        save(rt, &path, &key, &value, &Value::Null)?;
+        return Ok(value);
+    }
     let env = profile["api_key_env"]
         .as_str()
         .ok_or_else(|| Error::input("Missing api_key_env"))?;
@@ -192,11 +197,65 @@ pub fn request(rt: &Runtime, profile: &Value, task: &Task) -> Result<Value> {
     if !value.is_object() {
         return Err(failure("Model returned JSON other than an object", false));
     }
+    save(rt, &path, &key, &value, &response["usage"])?;
+    Ok(value)
+}
+fn save(rt: &Runtime, path: &str, key: &str, value: &Value, usage: &Value) -> Result<()> {
     rt.write(
-        &path,
+        path,
         &serde_json::to_vec(
-            &json!({"key":key,"checksum":digest(&value),"value":value,"usage":response["usage"]}),
+            &json!({"key":key,"checksum":digest(value),"value":value,"usage":usage}),
         )?,
-    )?;
+    )
+}
+/// Ask the locally installed Claude CLI, signed in with the user's subscription. The transcript goes
+/// on stdin only; the arguments hold the fixed instruction and schema. Diagnostics are never echoed.
+fn claude_cli(rt: &Runtime, profile: &Value, task: &Task, payload: &Value) -> Result<Value> {
+    let command: Vec<&str> = profile["command"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let (program, prefix) = command.split_first().ok_or_else(|| Error::input("Missing claude-cli command"))?;
+    let mut argv: Vec<String> = prefix.iter().map(|a| a.to_string()).collect();
+    // Isolation flags keep the user's MCP servers, plugins, hooks, skills and CLAUDE.md out of the
+    // request. --bare would also disable the subscription login, so it is not used. Two or more turns
+    // are needed: structured output is delivered through a tool call.
+    for a in [
+        "-p", "--model", profile["model"].as_str().unwrap_or(""), "--tools", "", "--max-turns", "3",
+        "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
+        "--output-format", "json", "--json-schema", &canonical(&task.schema),
+        "--system-prompt", payload["messages"][0]["content"].as_str().unwrap_or(""),
+    ] {
+        argv.push(a.into());
+    }
+    if let Some(effort) = profile["effort"].as_str().filter(|e| !e.is_empty()) {
+        argv.extend(["--effort".into(), effort.into()]);
+    }
+    let reply = process::run_with(
+        rt,
+        program,
+        &argv,
+        profile["timeout"].as_u64().unwrap_or(120),
+        Some(canonical(&task.request_data()).as_bytes()),
+    )
+    .map_err(|e| match e.code.as_str() {
+        "paused" => e,
+        _ => failure(
+            "The Claude CLI did not finish. Check that `claude` is installed and signed in, and that your plan's usage limit has not been reached.",
+            false,
+        ),
+    })?;
+    let out: Value = serde_json::from_str(&reply).map_err(|_| failure("The Claude CLI returned malformed JSON", false))?;
+    if out["is_error"] != false || out["subtype"] != "success" {
+        return Err(failure(
+            "The Claude CLI reported an error. Check that you are signed in and that your plan's usage limit has not been reached.",
+            false,
+        ));
+    }
+    let value = match out.get("structured_output").filter(|v| !v.is_null()) {
+        Some(v) => v.clone(),
+        None => blitzline_domain::parse_reply(out["result"].as_str().unwrap_or(""))
+            .map_err(|_| failure("Model returned malformed JSON", false))?,
+    };
+    if !value.is_object() {
+        return Err(failure("Model returned JSON other than an object", false));
+    }
     Ok(value)
 }

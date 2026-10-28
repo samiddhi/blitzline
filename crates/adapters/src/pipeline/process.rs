@@ -27,8 +27,9 @@ pub fn resolve(executable: &str) -> Result<PathBuf> {
             "/snap/bin",
         ]
         .map(PathBuf::from);
+        let local = directories::BaseDirs::new().map(|b| b.home_dir().join(".local/bin"));
         let path = std::env::var_os("PATH").unwrap_or_default();
-        for dir in std::env::split_paths(&path).chain(common) {
+        for dir in std::env::split_paths(&path).chain(common).chain(local) {
             options.push(dir.join(p));
         }
     }
@@ -48,17 +49,51 @@ pub fn resolve(executable: &str) -> Result<PathBuf> {
     )))
 }
 pub fn run(rt: &Runtime, executable: &str, args: &[String], timeout: u64) -> Result<String> {
+    run_with(rt, executable, args, timeout, None)
+}
+/// Environment a sandboxed tool may inherit: enough to find its own login, nothing that changes its behaviour.
+const ISOLATED_ENV: &[&str] = &[
+    "HOME", "USER", "LOGNAME", "PATH", "LANG", "TERM", "TMPDIR", "TEMP", "TMP", "CLAUDE_CONFIG_DIR",
+    "SYSTEMROOT", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+];
+/// Like `run`, but writes `input` to stdin and, in that case, also clears the environment (except
+/// `ISOLATED_ENV`, `XDG_*` and `LC_*`) and starts in the temporary directory.
+pub fn run_with(
+    rt: &Runtime,
+    executable: &str,
+    args: &[String],
+    timeout: u64,
+    input: Option<&[u8]>,
+) -> Result<String> {
     if rt.cancelled() {
         return Err(Error::paused());
     }
     let path = resolve(executable)?;
-    let mut child = Command::new(path)
+    let mut command = Command::new(path);
+    command
         .args(args)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    if input.is_some() {
+        command.env_clear().current_dir(std::env::temp_dir());
+        for (k, v) in std::env::vars_os() {
+            let name = k.to_string_lossy();
+            if ISOLATED_ENV.contains(&name.as_ref()) || name.starts_with("XDG_") || name.starts_with("LC_") {
+                command.env(k, v);
+            }
+        }
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| Error::operation(format!("Could not start {executable}: {e}")))?;
+    // Written from a thread so a child that answers before reading everything cannot deadlock us.
+    let writer = input.zip(child.stdin.take()).map(|(bytes, mut stdin)| {
+        let bytes = bytes.to_vec();
+        thread::spawn(move || {
+            let _ = stdin.write_all(&bytes);
+        })
+    });
     let out = child.stdout.take().unwrap();
     let err = child.stderr.take().unwrap();
     let stdout = thread::spawn(move || {
@@ -92,6 +127,9 @@ pub fn run(rt: &Runtime, executable: &str, args: &[String], timeout: u64) -> Res
             }
         }
     };
+    if let Some(writer) = writer {
+        let _ = writer.join();
+    }
     let out = stdout
         .join()
         .map_err(|_| Error::operation("Tool output reader failed"))??;

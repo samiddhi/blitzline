@@ -4,6 +4,12 @@ use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
 };
+/// Profile provider that runs the locally installed `claude -p` instead of calling an HTTP service.
+pub const CLAUDE_CLI: &str = "claude-cli";
+/// Models offered for the Claude CLI (aliases the CLI itself resolves to the latest version).
+pub const CLAUDE_CLI_MODELS: [&str; 3] = ["sonnet", "opus", "haiku"];
+/// Effort levels of `claude --effort`; an empty setting leaves the CLI default.
+pub const CLAUDE_CLI_EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 pub fn data_directory() -> PathBuf {
     if let Some(p) = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
@@ -183,13 +189,19 @@ fn profile_defaults(p: &Value) -> Result<Value> {
         "openrouter" => ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
         "deepseek" => ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
         "compatible" | "custom" => ("", "LLM_API_KEY"),
+        // No endpoint or key: the locally installed Claude CLI uses its own subscription login.
+        CLAUDE_CLI => ("", ""),
         _ => {
             return Err(Error::input(
-                "LLM provider must be openrouter, deepseek, or compatible",
+                "LLM provider must be openrouter, deepseek, compatible, or claude-cli",
             ));
         }
     };
     let mut out = json!({"provider":provider,"base_url":base,"api_key_env":key,"model":"","temperature":0.2,"max_tokens":8192,"timeout":120,"retries":2,"response_format":"json_object","referer":"","openrouter_provider":"","openrouter_max_price":{}});
+    if provider == CLAUDE_CLI {
+        out["command"] = json!(["claude"]);
+        out["effort"] = json!("");
+    }
     for (k, v) in p
         .as_object()
         .ok_or_else(|| Error::input("LLM profile must be a table"))?
@@ -307,7 +319,27 @@ pub fn validate(s: &Value) -> Result<()> {
             p["model"].as_str().unwrap_or(""),
             &format!("Profile {name} model"),
         )?;
-        validate_url(p["base_url"].as_str().unwrap_or(""))?;
+        let cli = p["provider"] == CLAUDE_CLI;
+        if cli {
+            if !CLAUDE_CLI_MODELS.contains(&p["model"].as_str().unwrap_or("")) {
+                return Err(Error::input(format!(
+                    "Profile {name} model must be one of {}",
+                    CLAUDE_CLI_MODELS.join(", ")
+                )));
+            }
+            let effort = p["effort"].as_str().unwrap_or("");
+            if !effort.is_empty() && !CLAUDE_CLI_EFFORTS.contains(&effort) {
+                return Err(Error::input(format!("Profile {name} effort must be one of {}", CLAUDE_CLI_EFFORTS.join(", "))));
+            }
+            if !p["command"]
+                .as_array()
+                .is_some_and(|c| !c.is_empty() && c.iter().all(|a| a.as_str().is_some_and(|a| !a.is_empty())))
+            {
+                return Err(Error::input(format!("Profile {name} command must be a list of non-empty strings")));
+            }
+        } else {
+            validate_url(p["base_url"].as_str().unwrap_or(""))?;
+        }
         for (key, min, max) in [
             ("timeout", 1, 86400),
             ("retries", 0, 10),
@@ -334,7 +366,7 @@ pub fn validate(s: &Value) -> Result<()> {
             return Err(Error::input("Invalid profile response_format"));
         }
         let key = p["api_key_env"].as_str().unwrap_or("");
-        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if !cli && (key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
             return Err(Error::input(
                 "api_key_env must name an environment variable",
             ));

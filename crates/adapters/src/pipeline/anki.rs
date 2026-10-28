@@ -1,7 +1,7 @@
 //! Known words taken live from an Anki collection: every word in the chosen fields of any note
 //! that has at least one card that is not new.
 use super::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, btree_map::Entry};
 
 /// Copies the collection first: Anki keeps it open (WAL mode), and a read-only connection to the
 /// live file would need to write the shared-memory file next to it.
@@ -35,7 +35,7 @@ pub fn known_words(collection: &Path, deck: &str, fields: &[String]) -> Result<B
     let mut rows = statement.query([deck]).map_err(fail)?;
     while let Some(row) = rows.next().map_err(fail)? {
         let mid: i64 = row.get(0).map_err(fail)?;
-        if !positions.contains_key(&mid) {
+        if let Entry::Vacant(slot) = positions.entry(mid) {
             let mut named = db
                 .prepare("select name from fields where ntid = ?1 order by ord")
                 .map_err(fail)?;
@@ -50,7 +50,7 @@ pub fn known_words(collection: &Path, deck: &str, fields: &[String]) -> Result<B
                 .filter(|(_, n)| fields.iter().any(|f| f.eq_ignore_ascii_case(n)))
                 .map(|(i, _)| i)
                 .collect();
-            positions.insert(mid, wanted);
+            slot.insert(wanted);
         }
         let flds: String = row.get(1).map_err(fail)?;
         let parts: Vec<&str> = flds.split('\x1f').collect();

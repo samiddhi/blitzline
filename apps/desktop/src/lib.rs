@@ -477,7 +477,7 @@ impl Desktop {
                     .iter()
                     .any(|p| matches!(p.status, Status::Running | Status::Queued))
                 {
-                    ui.spinner();
+                    spinner(ui);
                     ui.small("Processing example queue");
                 } else {
                     ui.small("Progress saved locally");
@@ -871,6 +871,31 @@ impl eframe::App for Desktop {
         self.poll_native();
         self.save_now();
     }
+}
+/// Same look as `ui.spinner()`, but redraws at ~30 fps. `ui.spinner()` asks for an
+/// immediate repaint every frame, and with vsync off that spins the GPU at full speed.
+pub(crate) fn spinner(ui: &mut egui::Ui) {
+    let size = ui.style().spacing.interact_size.y;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    ui.ctx().request_repaint_after(Duration::from_millis(33));
+    let color = ui.visuals().strong_text_color();
+    let radius = (rect.height().min(rect.width()) / 2.0) - 2.0;
+    let n_points = (radius.round() as u32).clamp(8, 128);
+    let time = ui.input(|i| i.time);
+    let start_angle = time * std::f64::consts::TAU;
+    let end_angle = start_angle + 240f64.to_radians() * time.sin();
+    let points: Vec<egui::Pos2> = (0..n_points)
+        .map(|i| {
+            let angle = egui::lerp(start_angle..=end_angle, i as f64 / n_points as f64);
+            let (sin, cos) = angle.sin_cos();
+            rect.center() + radius * egui::vec2(cos as f32, sin as f32)
+        })
+        .collect();
+    ui.painter()
+        .add(egui::Shape::line(points, egui::Stroke::new(3.0, color)));
 }
 pub(crate) fn text_input(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
     egui::TextEdit::singleline(text).margin(egui::Margin::symmetric(12, 9))

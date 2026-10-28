@@ -634,7 +634,7 @@ impl Desktop {
             });
         }
         if p.native_run.is_some() && self.worker.busy() {
-            ui.spinner();
+            spinner(ui);
             ui.label("Processing in the background. You can pause or browse other projects.");
             return;
         }

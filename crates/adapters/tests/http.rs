@@ -153,7 +153,8 @@ fn api_repairs_only_bad_items_and_keeps_secrets_out_of_saved_files() {
     assert_eq!(seen.lock().unwrap().len(), 2);
     for entry in walkdir::WalkDir::new(&p.backend.root) {
         let entry = entry.unwrap();
-        if entry.file_type().is_file() {
+        // The run's lock file is held open; Windows refuses reads of a locked file, and it is empty anyway.
+        if entry.file_type().is_file() && entry.file_name() != ".lock" {
             assert!(
                 !fs::read(entry.path())
                     .unwrap()
